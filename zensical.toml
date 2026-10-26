@@ -1,12 +1,12 @@
 [project]
 site_name = "e-voice"
 site_description = "CPU-first speech services in Rust: streaming STT with emotion and streaming TTS with learned voices, behind OpenAI-compatible APIs."
-site_url = "https://damvolkov.github.io/e-voice/"
+site_url = "https://edamlabs.github.io/e-voice/"
 site_dir = "data/ops/site"
-repo_url = "https://github.com/damvolkov/e-voice"
-repo_name = "damvolkov/e-voice"
+repo_url = "https://github.com/edamlabs/e-voice"
+repo_name = "edamlabs/e-voice"
 edit_uri = "edit/main/docs/"
-copyright = "MIT · e-voice, part of the eager (e-) series"
+copyright = "MIT · EDamLabs · e-voice, part of the eager (e-) series"
 nav = [
   { "Overview" = "index.md" },
   { "Guide" = [
@@ -31,6 +31,7 @@ nav = [
   { "Models" = "models.md" },
   { "Benchmark" = "benchmark.md" },
   { "Development" = "development.md" },
+  { "Decisions" = "decisions.md" },
   { "History" = [
     { "2026-10 · AGC onset fix" = "history/2026-10-agc-onset.md" },
     { "2026-10 · backends benchmark" = "history/2026-10-backends/index.md" },

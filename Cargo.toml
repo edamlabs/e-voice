@@ -2,6 +2,11 @@
 members = ["evoice/core", "evoice/stt", "evoice/tts", "cli"]
 resolver = "3"
 
+### What this repository is in EDamLabs' taxonomy (https://github.com/edamlabs/esteward#identity).
+[workspace.metadata.edamlabs]
+kind = "service"
+family = "eager"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_debug_implementations = "warn"

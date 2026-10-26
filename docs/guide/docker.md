@@ -57,5 +57,5 @@ both and stops the container when either exits; the healthcheck probes both port
 
 ## Published images
 
-The release workflow publishes `ghcr.io/damvolkov/e-voice-stt`, `-tts` and `-full` (`:X.Y.Z`, `:X.Y`,
+The release workflow publishes `ghcr.io/edamlabs/evoice-stt`, `evoice-tts` and `evoice-full` (`:X.Y.Z`, `:X.Y`,
 `:latest`) when the `PUBLISH_IMAGE` gate is on.
