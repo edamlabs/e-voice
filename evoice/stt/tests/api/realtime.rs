@@ -67,7 +67,7 @@ async fn test_transcription_session_follows_openai_events() {
         completed[0]["transcript"].as_str().unwrap().starts_with("En:"),
         "{completed:?}"
     );
-    assert!(!deltas.is_empty());
+    assert_ne!(deltas, "");
     assert_eq!(completed[0]["item_id"], started[0]["item_id"]);
     assert_eq!(completed[0]["emotion"]["label"], "happy");
     assert_eq!(code, Some(1000));

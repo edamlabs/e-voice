@@ -50,7 +50,10 @@ fn test_sentences_are_spoken_one_at_a_time_in_order() {
         SessionInput::Text("Primera frase. Segunda frase. Tercera".into()),
     );
     assert_eq!(out, [start(0, "Primera frase."), speak(0, "Primera frase.")]);
-    assert!(run(&mut session, SessionInput::Flush).is_empty());
+    assert_eq!(
+        run(&mut session, SessionInput::Flush),
+        [] as [e_voice_tts::workflow::session::SessionOutput; 0]
+    );
     assert_eq!(
         run(&mut session, done(0)),
         [end(0, None), start(1, "Segunda frase."), speak(1, "Segunda frase.")]
@@ -88,7 +91,7 @@ fn test_audio_is_forwarded_only_for_the_current_sentence() {
             audio,
         },
     );
-    assert!(stale.is_empty());
+    assert_eq!(stale, [] as [e_voice_tts::workflow::session::SessionOutput; 0]);
 }
 
 #[test]
@@ -103,10 +106,16 @@ fn test_cancel_aborts_the_current_sentence_and_drops_the_queue() {
             end(0, Some(NodeError::Cancelled))
         ]
     );
-    assert!(run(&mut session, done(0)).is_empty());
-    assert!(run(&mut session, SessionInput::Flush).is_empty());
+    assert_eq!(
+        run(&mut session, done(0)),
+        [] as [e_voice_tts::workflow::session::SessionOutput; 0]
+    );
+    assert_eq!(
+        run(&mut session, SessionInput::Flush),
+        [] as [e_voice_tts::workflow::session::SessionOutput; 0]
+    );
     let after = run(&mut session, SessionInput::Text("Sigo aquí.".into()));
-    assert!(after.is_empty());
+    assert_eq!(after, [] as [e_voice_tts::workflow::session::SessionOutput; 0]);
     assert_eq!(
         run(&mut session, SessionInput::Flush),
         [start(1, "Sigo aquí."), speak(1, "Sigo aquí.")]
@@ -121,13 +130,19 @@ fn test_close_speaks_the_rest_then_closes_once() {
         run(&mut session, SessionInput::Close),
         [start(0, "Adiós"), speak(0, "Adiós")]
     );
-    assert!(run(&mut session, SessionInput::Text("tarde".into())).is_empty());
+    assert_eq!(
+        run(&mut session, SessionInput::Text("tarde".into())),
+        [] as [e_voice_tts::workflow::session::SessionOutput; 0]
+    );
     assert_eq!(
         run(&mut session, done(0)),
         [end(0, None), SessionOutput::Event(Event::Closed)]
     );
     assert!(session.closed());
-    assert!(run(&mut session, SessionInput::Close).is_empty());
+    assert_eq!(
+        run(&mut session, SessionInput::Close),
+        [] as [e_voice_tts::workflow::session::SessionOutput; 0]
+    );
 }
 
 #[test]

@@ -57,8 +57,14 @@ fn test_ignores_other_speech_and_silence() {
         fixture::speak("Hey, are you there? What time is it?"),
     ]
     .concat();
-    assert!(detections(&ww, &speech, 1_280).is_empty());
-    assert!(detections(&ww, &fixture::silence(5.0), 1_280).is_empty());
+    assert_eq!(
+        detections(&ww, &speech, 1_280),
+        [] as [e_voice_stt::schema::event::WakeEvent; 0]
+    );
+    assert_eq!(
+        detections(&ww, &fixture::silence(5.0), 1_280),
+        [] as [e_voice_stt::schema::event::WakeEvent; 0]
+    );
 }
 
 #[test]

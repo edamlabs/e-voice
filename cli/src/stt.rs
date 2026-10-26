@@ -146,9 +146,10 @@ impl SttArgs {
                     _ = tokio::signal::ctrl_c() => break,
                 };
                 let samples: Vec<i16> = bytes
-                    .chunks_exact(2)
-                    .filter_map(|pair| pair.try_into().ok())
-                    .map(i16::from_le_bytes)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| i16::from_le_bytes(*pair))
                     .collect();
                 sent = sent.saturating_add(samples.len());
                 peak = samples

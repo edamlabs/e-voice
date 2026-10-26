@@ -108,8 +108,10 @@ impl Prompt {
             .ok_or(BackendError::Load("voice dtype"))?;
         let audio = view
             .data()
-            .chunks_exact(4)
-            .filter_map(|bytes| bytes.try_into().ok().map(f32::from_le_bytes))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes| f32::from_le_bytes(*bytes))
             .collect();
         Ok(Self { audio, text })
     }

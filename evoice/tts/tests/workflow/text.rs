@@ -10,7 +10,7 @@ fn stream(chunker: &mut Chunker, text: &str) -> Vec<String> {
 #[test]
 fn test_push_releases_a_sentence_once_the_next_one_starts() {
     let mut chunker = Chunker::new(0, 200);
-    assert!(chunker.push("Hola mundo. ").is_empty());
+    assert_eq!(chunker.push("Hola mundo. "), [] as [std::string::String; 0]);
     assert_eq!(chunker.push("Esto"), ["Hola mundo."]);
     assert_eq!(chunker.flush(), ["Esto"]);
 }
@@ -41,7 +41,7 @@ fn test_clear_forgets_buffered_text() {
     let mut chunker = Chunker::new(0, 200);
     chunker.push("Esto no se dirá");
     chunker.clear();
-    assert!(chunker.flush().is_empty());
+    assert_eq!(chunker.flush(), [] as [std::string::String; 0]);
 }
 
 proptest! {
