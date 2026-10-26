@@ -3,6 +3,8 @@
 CPU-first speech services in Rust: speech to text (`e-voice`, :5500) and text to speech
 (`e-voice-tts`, :5600), two services on one shared core.
 
+Part of the **EDamLabs eager series**: EDamLabs' own e- products ([EDamLabs families](https://github.com/edamlabs/esteward#identity)).
+
 ## Speech to text
 
 One pipeline — denoise → wake word → VAD → language ID → ASR ∥ SER →

@@ -42,13 +42,13 @@ The rules:
 
 ## Releases
 
-Every image is versioned on its own: `e-voice-stt`, `e-voice-tts` and `e-voice-full` carry their own
+Every image is versioned on its own: `evoice-stt`, `evoice-tts` and `evoice-full` carry their own
 `X.Y.Z`, tagged `stt-vX.Y.Z`, `tts-vX.Y.Z` and `full-vX.Y.Z`, each with its GitHub release. A release
 names the service that changed; `full`, which ships both, is bumped with either:
 
 ```bash
-gh workflow run release.yml -f service=stt -f bump=patch   # e-voice-stt and e-voice-full
-gh workflow run release.yml -f service=tts -f bump=patch   # e-voice-tts and e-voice-full
+gh workflow run release.yml -f service=stt -f bump=patch   # evoice-stt and evoice-full
+gh workflow run release.yml -f service=tts -f bump=patch   # evoice-tts and evoice-full
 gh workflow run release.yml -f service=both -f bump=minor  # all three
 ```
 

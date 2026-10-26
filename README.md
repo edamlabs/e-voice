@@ -16,10 +16,12 @@
   <a href="https://github.com/j178/prek"><img src="https://img.shields.io/badge/hooks-prek-blueviolet" alt="prek"></a>
 </p>
 
+Part of the **EDamLabs eager series**: EDamLabs' own e- products ([EDamLabs families](https://github.com/edamlabs/esteward#identity)).
+
 ---
 
 One pipeline, every node swappable from config. Full documentation:
-**[damvolkov.github.io/e-voice](https://damvolkov.github.io/e-voice/)** (built locally with `make docs`).
+**[edamlabs.github.io/e-voice](https://edamlabs.github.io/e-voice/)** (built locally with `make docs`).
 
 ```
 audio ─▶ [denoise] ─▶ AGC ─▶ [ww] ─▶ VAD ─▶ [lid] ─▶ ASR (streaming partials) ─┬─▶ join ─▶ final {text, lang, emotion}

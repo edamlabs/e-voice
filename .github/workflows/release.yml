@@ -1,6 +1,6 @@
 ##### RELEASE #####
 # Per-service, git-first releases: every image has its own version and tag (stt-vX.Y.Z, tts-vX.Y.Z,
-# full-vX.Y.Z). A release names the service that changed; e-voice-full, which ships both, is bumped with
+# full-vX.Y.Z). A release names the service that changed; evoice-full, which ships both, is bumped with
 # either. A service without a tag of its own starts from the last plain vX.Y.Z (v0.2.0). Each image job is
 # inert until its gate is on (see .github/ci.vars.example).
 name: release
@@ -78,13 +78,13 @@ jobs:
             git -c "http.https://github.com/.extraheader=${auth}" push origin "$tag"
             latest=false
             [ "$image" = full ] && latest=true
-            gh release create "$tag" --title "e-voice-${image} ${version}" --latest="$latest" \
+            gh release create "$tag" --title "evoice-${image} ${version}" --latest="$latest" \
               --verify-tag --generate-notes --notes-start-tag "$previous"
             echo "${image}=${version}" >> "$GITHUB_OUTPUT"
           done
 
   image-stt:
-    name: image · e-voice-stt
+    name: image · evoice-stt
     if: vars.PUBLISH_IMAGE == 'true' && needs.bump.outputs.stt != ''
     needs: bump
     runs-on: ubuntu-24.04
@@ -105,13 +105,13 @@ jobs:
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository_owner }}/e-voice-stt
+          images: ghcr.io/${{ github.repository_owner }}/evoice-stt
           tags: |
             type=semver,pattern={{version}},value=v${{ needs.bump.outputs.stt }}
             type=semver,pattern={{major}}.{{minor}},value=v${{ needs.bump.outputs.stt }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=e-voice-stt
+            org.opencontainers.image.title=evoice-stt
             org.opencontainers.image.description=CPU-first speech-to-text service with emotion, OpenAI/Deepgram/ElevenLabs compatible
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -123,7 +123,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   image-tts:
-    name: image · e-voice-tts
+    name: image · evoice-tts
     if: vars.PUBLISH_IMAGE == 'true' && needs.bump.outputs.tts != ''
     needs: bump
     runs-on: ubuntu-24.04
@@ -144,13 +144,13 @@ jobs:
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository_owner }}/e-voice-tts
+          images: ghcr.io/${{ github.repository_owner }}/evoice-tts
           tags: |
             type=semver,pattern={{version}},value=v${{ needs.bump.outputs.tts }}
             type=semver,pattern={{major}}.{{minor}},value=v${{ needs.bump.outputs.tts }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=e-voice-tts
+            org.opencontainers.image.title=evoice-tts
             org.opencontainers.image.description=CPU-first streaming text-to-speech with learned voices (Qwen3 by default), OpenAI compatible
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -162,7 +162,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   image-full:
-    name: image · e-voice-full
+    name: image · evoice-full
     if: vars.PUBLISH_IMAGE == 'true' && needs.bump.outputs.full != ''
     needs: bump
     runs-on: ubuntu-24.04
@@ -183,13 +183,13 @@ jobs:
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository_owner }}/e-voice-full
+          images: ghcr.io/${{ github.repository_owner }}/evoice-full
           tags: |
             type=semver,pattern={{version}},value=v${{ needs.bump.outputs.full }}
             type=semver,pattern={{major}}.{{minor}},value=v${{ needs.bump.outputs.full }}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.title=e-voice-full
+            org.opencontainers.image.title=evoice-full
             org.opencontainers.image.description=e-voice STT (:5500) and TTS (:5600) in one container
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:

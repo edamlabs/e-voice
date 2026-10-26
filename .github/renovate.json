@@ -1,0 +1,124 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "enabledManagers": [
+    "cargo",
+    "dockerfile",
+    "github-actions",
+    "pep621",
+    "rust-toolchain"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "timezone": "Europe/Madrid",
+  "prConcurrentLimit": 3,
+  "abandonmentThreshold": "1 year",
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on the first day of the month"
+    ],
+    "automerge": true
+  },
+  "packageRules": [
+    {
+      "description": "Service runtime, the whole Rust tree: one weekly PR.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "groupName": "rust dependencies",
+      "labels": [
+        "tooling"
+      ]
+    },
+    {
+      "description": "Service runtime: patch releases merge themselves once every required check passes; minor and major wait for a human.",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "The benchmark's uv project (eval/: jiwer, polars, structlog, ruff, ty, pytest): tooling, one weekly PR that merges itself.",
+      "matchManagers": [
+        "pep621"
+      ],
+      "groupName": "python tooling",
+      "labels": [
+        "tooling"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "requires-python is a support promise, not a dependency: never bumped by a bot.",
+      "matchDepTypes": [
+        "requires-python"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Build and runtime images stay pinned by digest; one monthly PR.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "groupName": "docker images",
+      "pinDigests": true,
+      "schedule": [
+        "before 6am on the first day of the month"
+      ],
+      "labels": [
+        "tooling"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "cargo-chef tags carry the Rust minor (latest-rust-1.94-slim-trixie): it moves with rust-toolchain.toml's channel, in one PR.",
+      "matchPackageNames": [
+        "rust",
+        "lukemathwalker/cargo-chef"
+      ],
+      "groupName": "rust toolchain",
+      "schedule": [
+        "at any time"
+      ],
+      "labels": [
+        "tooling"
+      ],
+      "automerge": true
+    },
+    {
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "lukemathwalker/cargo-chef"
+      ],
+      "versioning": "regex:^latest-rust-(?<major>\\d+)\\.(?<minor>\\d+)-slim-trixie$"
+    },
+    {
+      "description": "Workflow actions stay pinned by digest; one monthly PR.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions",
+      "pinDigests": true,
+      "schedule": [
+        "before 6am on the first day of the month"
+      ],
+      "labels": [
+        "tooling"
+      ],
+      "automerge": true
+    }
+  ],
+  "platformAutomerge": true,
+  "automergeType": "pr"
+}
