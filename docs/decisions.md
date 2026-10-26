@@ -46,3 +46,15 @@ pinned by digest. Renovate groups, schedules and automerges in one file, and is 
 
 **Rejected.** Dependabot (no automerge policy of its own, a second tool across the organisation); a human merging
 every green routine PR.
+
+### 2026-10-26 · The benchmark pins its Python to 3.14
+
+**Decision.** `eval/.python-version` holds `3.14`: uv runs the benchmark, its hooks and CI on the latest 3.14, never
+on whatever Python is newest.
+
+**Evidence.** `requires-python = ">=3.13"` let CI's uv pick CPython 3.15.1 the day it shipped (2026-10-21); under it
+polars 1.44.2 returns `None` from `Series.drop_nulls()` and `pytest (eval)` failed on `main` from that day on.
+Reproduced in a clean container with managed Pythons only: 3.15.1 fails, 3.14.9 and 3.13.5 pass.
+
+**Rejected.** polars 2.1.0 (passes on 3.15, but a major bump the benchmark's tests do not cover end to end; Renovate
+proposes it on its own terms); capping `requires-python` (the floor is a contract, the pin is the runtime).

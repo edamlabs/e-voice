@@ -17,6 +17,10 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
   Python tooling, Rust patch releases) merge themselves once every required check passes; Rust minor and major
   updates wait for a human.
 
+### Fixed
+
+- Benchmark (`eval/`) pinned to Python 3.14: CI had moved to 3.15.1, where polars 1.44.2 breaks its tests.
+
 ### Security
 
 - rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.11, tokio 1.54.1: past their
