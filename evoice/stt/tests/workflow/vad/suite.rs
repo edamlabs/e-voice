@@ -66,7 +66,10 @@ pub fn dialogue_yields_ordered_exact_segments(vad: &Arc<dyn Vad>) {
 }
 
 pub fn silence_yields_nothing(vad: &Arc<dyn Vad>) {
-    assert!(run(vad, &fixture::silence(5.0), 1600).is_empty());
+    assert_eq!(
+        run(vad, &fixture::silence(5.0), 1600),
+        [] as [e_voice_stt::workflow::vad::base::VadEvent; 0]
+    );
 }
 
 pub fn segments_do_not_depend_on_chunking(vad: &Arc<dyn Vad>) {

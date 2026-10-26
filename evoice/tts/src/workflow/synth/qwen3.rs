@@ -327,8 +327,10 @@ impl Tables {
             .map(|value| value / (1.0 + (-value).exp()))
             .collect();
         linear(&hidden, &self.fc2, TEXT_HIDDEN, HIDDEN)
-            .chunks_exact(HIDDEN)
-            .map(<[f32]>::to_vec)
+            .as_chunks::<HIDDEN>()
+            .0
+            .iter()
+            .map(|row| row.to_vec())
             .collect()
     }
 

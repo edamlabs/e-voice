@@ -82,7 +82,7 @@ async fn test_invalid_parameters_are_refused() {
         vec![Message::Binary(pcm(0.9, 160).into())],
     )
     .await;
-    assert!(texts.is_empty());
+    assert_eq!(texts, [] as [std::string::String; 0]);
     assert_eq!(code, Some(1003));
     let refused = tokio_tungstenite::connect_async(format!("{}?emotion=loud", base().await)).await;
     assert!(refused.is_err());

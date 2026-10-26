@@ -149,7 +149,7 @@ impl OwwWwSession {
         self.raw.drain(..self.raw.len().saturating_sub(CHUNK + CONTEXT));
         let audio: Vec<f32> = self.raw.iter().copied().collect();
         let spectrum = OwwModels::run(&self.models.melspec, [1, audio.len(), 0, 0], &audio)?;
-        let frames = spectrum.chunks_exact(BANDS).map(|frame| {
+        let frames = spectrum.as_chunks::<BANDS>().0.iter().map(|frame| {
             let mut bands = [0.0; BANDS];
             bands
                 .iter_mut()
@@ -188,8 +188,8 @@ impl WwSession for OwwWwSession {
     fn push(&mut self, audio: &[f32]) -> Result<Option<WakeEvent>, NodeError> {
         let mut pending = std::mem::take(&mut self.pending);
         pending.extend_from_slice(audio);
-        let chunks = pending.chunks_exact(CHUNK);
-        let rest = chunks.remainder().len();
+        let (chunks, remainder) = pending.as_chunks::<CHUNK>();
+        let rest = remainder.len();
         let mut detection = None;
         for chunk in chunks {
             let score = self.push_chunk(chunk)?;

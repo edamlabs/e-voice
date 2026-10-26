@@ -107,8 +107,10 @@ impl TtsArgs {
                     Some(Ok(Message::Binary(bytes))) => {
                         first.get_or_insert_with(|| start.elapsed());
                         let samples: Vec<f32> = bytes
-                            .chunks_exact(4)
-                            .filter_map(|chunk| chunk.try_into().ok().map(f32::from_le_bytes))
+                            .as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|chunk| f32::from_le_bytes(*chunk))
                             .collect();
                         if let Some(speaker) = &speaker {
                             speaker.push(&samples, rate);

@@ -138,7 +138,7 @@ fn run(plan: SessionPlan, ops: &[Op], finale: Finale) -> (Vec<SessionOutput>, us
         Finale::Cancel => SessionInput::Cancel,
     };
     session.step(now, closing);
-    session.step(now + Duration::from_secs(86_400), SessionInput::Tick);
+    session.step(now + Duration::from_hours(24), SessionInput::Tick);
     outputs.extend(session.poll());
     assert!(session.closed());
     (outputs, peak)
@@ -297,7 +297,10 @@ fn test_finals_wait_for_earlier_segments() {
             result: Ok(Emotion::default()),
         },
     );
-    assert!(finals(&session.poll().collect::<Vec<_>>()).is_empty());
+    assert_eq!(
+        finals(&session.poll().collect::<Vec<_>>()),
+        [] as [&e_voice_stt::schema::event::FinalEvent; 0]
+    );
     session.step(
         ms(30),
         SessionInput::Transcript {
