@@ -16,3 +16,9 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 - Dependencies: Renovate replaces Dependabot. Routine updates (images, toolchain, actions, lock files, the benchmark's
   Python tooling, Rust patch releases) merge themselves once every required check passes; Rust minor and major
   updates wait for a human.
+
+### Security
+
+- rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.11, tokio 1.54.1: past their
+  RustSec advisories. zip stays behind (npyz needs `^0.6`, sherpa-onnx-sys builds with 2.x; the fixes land in
+  9.0); e-voice never calls `ZipArchive::extract`, the affected path.
