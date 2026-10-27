@@ -1,13 +1,3 @@
-<h1 align="center">e-voice</h1>
-
-<p align="center">
-  <img src="assets/logo.svg" alt="e-voice" height="110" />
-</p>
-
-<p align="center">
-  <strong>CPU-first speech services in Rust — streaming STT with emotion on every segment, and streaming TTS that speaks in a learned voice, behind OpenAI-compatible APIs.</strong>
-</p>
-
 <p align="center">
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-%3E%3D1.94-orange?logo=rust&logoColor=white" alt="Rust"></a>
   <a href="https://github.com/k2-fsa/sherpa-onnx"><img src="https://img.shields.io/badge/runtime-sherpa--onnx%201.13.8-blue" alt="sherpa-onnx"></a>
@@ -16,9 +6,14 @@
   <a href="https://github.com/j178/prek"><img src="https://img.shields.io/badge/hooks-prek-blueviolet" alt="prek"></a>
 </p>
 
-Part of the **EDamLabs eager series**: EDamLabs' own e- products ([EDamLabs families](https://github.com/edamlabs/esteward#identity)).
+<p align="center">
+  <img src="assets/e-voice-landscape.svg" alt="e-voice" height="110" />
+</p>
 
----
+CPU-first speech services in Rust — streaming STT with emotion on every segment, and streaming TTS that
+speaks in a learned voice, behind OpenAI-compatible APIs.
+
+Part of the **EDamLabs eager series**: EDamLabs' own e- products ([EDamLabs families](https://github.com/edamlabs/esteward#identity)).
 
 One pipeline, every node swappable from config. Full documentation:
 **[edamlabs.github.io/e-voice](https://edamlabs.github.io/e-voice/)** (built locally with `make docs`).
