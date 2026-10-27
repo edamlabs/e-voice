@@ -137,7 +137,7 @@ tts:  ## live synthesis to the speaker: make tts ARGS='"Hola" --voice damien' (n
 docs:  ## the OpenAPI documents, then the documentation site into data/ops/site
 	@cargo run -q --release -p e-voice-stt -- openapi > docs/api/openapi.json
 	@cargo run -q --release -p e-voice-tts -- openapi > docs/api/openapi-tts.json
-	@uvx zensical==$(ZENSICAL_VERSION) build --clean
+	@uvx zensical==$(ZENSICAL_VERSION) build --strict --clean
 
 docs-serve:  ## live documentation preview on :8000
 	@cargo run -q --release -p e-voice-stt -- openapi > docs/api/openapi.json
