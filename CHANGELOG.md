@@ -13,6 +13,7 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 - Images move with the owner and drop the dash, from the next release: `ghcr.io/edamlabs/evoice-stt`,
   `ghcr.io/edamlabs/evoice-tts` and `ghcr.io/edamlabs/evoice-full` (were `ghcr.io/damvolkov/e-voice-*`).
 - Identity declared in `Cargo.toml` (`[workspace.metadata.edamlabs]`: service, eager).
+- README: badge layout, landscape logo and description standardized on the EDamLabs template.
 - Dependencies: Renovate replaces Dependabot. Routine updates (images, toolchain, actions, lock files, the benchmark's
   Python tooling, Rust patch releases) merge themselves once every required check passes; Rust minor and major
   updates wait for a human.
