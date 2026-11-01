@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.28@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
 # TTS service alone (e-voice:tts, :5600): binary e-voice-tts, manifest evoice/tts/models.toml. Defaults
 # to Qwen3 (public weights, installed by `pull`); Pocket needs the local exports of `make pocket`, which
 # the compose `tts-pull` service mounts (EVOICE_TTS__SYNTH__BACKEND=pocket to use them).
@@ -6,7 +6,7 @@
 
 ##### BASES #####
 ARG CHEF=lukemathwalker/cargo-chef:latest-rust-1.99-slim-trixie@sha256:f122e3c240d1c05668b07179cf6fa07647db2a79a110f4bb8a91d75f90d5b8e4
-ARG RUNTIME=debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+ARG RUNTIME=debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
 ##### TOOLCHAIN #####
 FROM ${CHEF} AS chef
