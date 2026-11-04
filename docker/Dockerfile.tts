@@ -5,7 +5,7 @@
 # Build context is the repository root. Build steps are the Makefile's: `system`, `sherpa`, `dist`.
 
 ##### BASES #####
-ARG CHEF=lukemathwalker/cargo-chef:latest-rust-1.99-slim-trixie@sha256:f122e3c240d1c05668b07179cf6fa07647db2a79a110f4bb8a91d75f90d5b8e4
+ARG CHEF=lukemathwalker/cargo-chef:latest-rust-1.99-slim-trixie@sha256:c7b109b68df2196f7a8e5f370c4dfd5e4b5b98151f56c2a728887610dc8d1632
 ARG RUNTIME=debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
 ##### TOOLCHAIN #####
