@@ -5,12 +5,12 @@ description = "Datasets, scoring and reports for the e-voice benchmark"
 requires-python = ">=3.13"
 dependencies = [
     "jiwer>=4.0",
-    "polars>=1.44.2",
+    "polars>=2.1.0",
     "structlog>=26.1.0",
 ]
 
 [dependency-groups]
-dev = ["pytest>=9.2.0", "ruff>=0.17.3", "ty>=0.0.95"]
+dev = ["pytest>=9.2.0", "ruff>=0.17.4", "ty>=0.0.99"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
