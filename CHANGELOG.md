@@ -65,6 +65,11 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     socket (the default let one legal 16 MiB frame cost the native socket 126 MB; a legal 2 MiB frame now costs
     11.6 MiB). A client past the cap is closed with 1009 and a reason, not a normal close; the server does not wait
     for the client's close reply.
+  - TTS text: at most 4096 characters per request on `/v1/audio/speech` and per `text` message on the native
+    socket; that door's body is capped at 64 KiB. A malformed, invalid or oversized body is now answered in the
+    JSON error shape with its own status (400, 413, 415, 422) — it used to be plain text.
+  - Header numbers (channels, packet sizes) were read in the decoder and size nothing beyond one packet: a
+    26-channel WAV decodes, 27 channels are refused. ADPCM is not compiled in.
   - `POST /v1/voices` stops decoding clips at 30 s in total; its `seconds` now reports the audio learned (at most
     30), not the length uploaded. The audio the voice is learned from is sample-identical to before.
 - rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.11, tokio 1.54.1: past their

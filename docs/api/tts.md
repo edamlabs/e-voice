@@ -69,3 +69,9 @@ OpenAI shape, `{"error": {"message", "type"}}`: 400 invalid request, 404 unknown
 the loaded model cannot use, 501 a backend that cannot learn voices, 503 every worker busy.
 
 The text socket caps a message at 64 KiB: past the cap the socket is closed with 1009; the server does not wait for the client's close reply, and a client still sending a single frame larger than the cap may see the connection reset before it reads the close.
+
+**Limits.** `/v1/audio/speech` takes at most 4096 characters of `input` (OpenAI's documented maximum) and a 64 KiB
+body; past either → 400 or 413 in the JSON error shape, as is a malformed or invalid body. The answer is streamed
+as it is synthesized and back-pressured by the client's reading, so memory is bounded by the runner's channels, not
+by the text; the character limit bounds the work one request can ask for. The native socket takes at most 4096
+characters per `text` message; a longer one gets an `error` message and is dropped, the socket stays open.

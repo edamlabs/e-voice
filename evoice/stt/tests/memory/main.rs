@@ -39,6 +39,93 @@ fn peak_kib() -> u64 {
         .unwrap()
 }
 
+/// A RIFF/WAVE file: a `fmt ` chunk and a `data` chunk, fields little-endian.
+fn riff(fmt: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut bytes = b"RIFF".to_vec();
+    bytes.extend_from_slice(&u32::try_from(4 + 8 + fmt.len() + 8 + data.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&u32::try_from(fmt.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(fmt);
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    bytes.extend_from_slice(data);
+    bytes
+}
+
+/// PCM s16 with `channels` channels, one second at 16 kHz: a tone in channel 0, silence elsewhere.
+fn pcm_wav(channels: u16) -> Vec<u8> {
+    let mut fmt = Vec::new();
+    fmt.extend_from_slice(&1u16.to_le_bytes());
+    fmt.extend_from_slice(&channels.to_le_bytes());
+    fmt.extend_from_slice(&16_000u32.to_le_bytes());
+    fmt.extend_from_slice(&(16_000 * u32::from(channels) * 2).to_le_bytes());
+    fmt.extend_from_slice(&(channels * 2).to_le_bytes());
+    fmt.extend_from_slice(&16u16.to_le_bytes());
+    let mut data = Vec::new();
+    for frame in 0..16_000u32 {
+        data.extend_from_slice(&(((frame as f32 * 0.05).sin() * 9_000.0) as i16).to_le_bytes());
+        data.extend(std::iter::repeat_n(0u8, 2 * (usize::from(channels) - 1)));
+    }
+    riff(&fmt, &data)
+}
+
+/// IMA ADPCM with the largest block (65,535 bytes), `blocks` of them, silence nibbles after a zero predictor.
+fn adpcm_wav(channels: u16, blocks: usize) -> Vec<u8> {
+    let block_align = 65_535u16;
+    let mut fmt = Vec::new();
+    fmt.extend_from_slice(&0x0011u16.to_le_bytes());
+    fmt.extend_from_slice(&channels.to_le_bytes());
+    fmt.extend_from_slice(&16_000u32.to_le_bytes());
+    fmt.extend_from_slice(&8_000u32.to_le_bytes());
+    fmt.extend_from_slice(&block_align.to_le_bytes());
+    fmt.extend_from_slice(&4u16.to_le_bytes());
+    fmt.extend_from_slice(&2u16.to_le_bytes());
+    fmt.extend_from_slice(&65_535u16.to_le_bytes());
+    let mut block = Vec::new();
+    for _ in 0..channels {
+        block.extend_from_slice(&[0, 0, 0, 0]);
+    }
+    block.resize(usize::from(block_align), 0x11);
+    riff(&fmt, &block.repeat(blocks))
+}
+
+async fn upload(address: &str, door: &str, bytes: Vec<u8>) -> u16 {
+    let client = reqwest::Client::new();
+    match door {
+        "openai" => {
+            let form = Form::new()
+                .text("model", "whisper-1")
+                .part("file", Part::bytes(bytes).file_name("a.wav"));
+            client
+                .post(format!("http://{address}/v1/audio/transcriptions"))
+                .multipart(form)
+                .send()
+                .await
+        }
+        "deepgram" => {
+            client
+                .post(format!("http://{address}/v1/listen?language=es"))
+                .header("content-type", "audio/wav")
+                .body(bytes)
+                .send()
+                .await
+        }
+        _ => {
+            let form = Form::new()
+                .text("model_id", "scribe_v1")
+                .part("file", Part::bytes(bytes).file_name("a.wav"));
+            client
+                .post(format!("http://{address}/v1/speech-to-text"))
+                .multipart(form)
+                .send()
+                .await
+        }
+    }
+    .unwrap()
+    .status()
+    .as_u16()
+}
+
 /// A mono s16 WAV of 1,600 loud samples whose header claims `rate` Hz.
 fn wav_claiming(rate: u32) -> Vec<u8> {
     let data = 3_200u32;
@@ -178,4 +265,54 @@ async fn test_refusing_absurd_rates_on_every_path_keeps_the_process_small() {
         flooded < 600_000,
         "a flood of legal frames grew the peak by {flooded} KiB"
     );
+
+    let (address, _) = app::serve(nodes(batch(0), Some(ser(0)), None), 1 << 28, false).await;
+    let before = peak_kib();
+    for door in ["openai", "deepgram", "scribe"] {
+        assert_eq!(
+            upload(&address, door, pcm_wav(26)).await,
+            200,
+            "{door}: 26 channels is the most symphonia takes"
+        );
+        assert_eq!(upload(&address, door, pcm_wav(27)).await, 400, "{door}: 27 channels");
+    }
+    let wide = peak_kib().saturating_sub(before);
+    println!(
+        "CHANNELS 26 accepted, 27 refused on three doors: peak grew {wide} KiB (process peak now {} KiB)",
+        peak_kib()
+    );
+    assert!(wide < 100_000, "crafted channel counts grew the peak by {wide} KiB");
+    let before = peak_kib();
+    let mut answers = Vec::new();
+    for channels in [1u16, 2] {
+        for door in ["openai", "deepgram", "scribe"] {
+            answers.push((channels, door, upload(&address, door, adpcm_wav(channels, 2)).await));
+        }
+    }
+    let reason = reqwest::Client::new()
+        .post(format!("http://{address}/v1/audio/transcriptions"))
+        .multipart(
+            Form::new()
+                .text("model", "whisper-1")
+                .part("file", Part::bytes(adpcm_wav(1, 2)).file_name("a.wav")),
+        )
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    println!("ADPCM refusal body: {reason}");
+    let adpcm = peak_kib().saturating_sub(before);
+    println!(
+        "ADPCM largest block, 1 and 2 channels, 3 doors: answers {answers:?}; peak grew {adpcm} KiB (process peak now {} KiB)",
+        peak_kib()
+    );
+    assert!(
+        answers.iter().all(|(_, _, status)| matches!(status, 200 | 400)),
+        "{answers:?}"
+    );
+    assert!(adpcm < 100_000, "crafted ADPCM blocks grew the peak by {adpcm} KiB");
+    let alive = reqwest::get(format!("http://{address}/health")).await.unwrap();
+    assert_eq!(alive.status(), 200);
 }

@@ -14,7 +14,7 @@ use crate::api::error::ApiError;
 use crate::api::state::AppState;
 use crate::core::encode::AudioFormat;
 use crate::schema::event::Event;
-use crate::workflow::runner::Request;
+use crate::workflow::runner::{INPUT, Request};
 use crate::workflow::synth::base::SynthSession;
 
 const NORMAL: u16 = 1000;
@@ -26,8 +26,8 @@ const INTERNAL: u16 = 1011;
 /// still be arriving; dropping at once makes the kernel reset the connection, and the reset can reach
 /// the client before the close does. Nothing is read meanwhile.
 const LINGER: Duration = Duration::from_secs(1);
-/// The largest message or frame the socket takes: 64 KiB, room for one text message of the most
-/// characters a speech request may carry even with every character JSON-escaped.
+/// The largest message or frame the socket takes: 64 KiB, room for one text message of [`INPUT`]
+/// characters even with every character JSON-escaped.
 const MESSAGE: usize = 65_536;
 
 /// Stream options; a missing `voice` uses the default one.
@@ -167,6 +167,11 @@ async fn serve(
         tokio::select! {
             message = source.next() => match message {
                 Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
+                    Ok(ClientMessage::Text { text: words }) if words.chars().count() > INPUT => {
+                        let length = words.chars().count();
+                        let message = format!("text is too long: {length} characters, at most {INPUT}");
+                        sink.send(json(&ServerMessage::Error { message })).await.ok();
+                    }
                     Ok(message) => {
                         let request = match message {
                             ClientMessage::Text { text } => Request::Text(text),
