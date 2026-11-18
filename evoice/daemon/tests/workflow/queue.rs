@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use e_voice_core::schema::lang::Lang;
 use e_voice_daemon::speech::base::SpeechError;
-use e_voice_daemon::workflow::queue::{BACKLOG, SpeakError, SpeechQueue, SpeechState};
+use e_voice_daemon::workflow::queue::{BACKLOG, Outcome, SpeakError, SpeechQueue, SpeechState};
 use e_voice_device::error::DeviceError;
 use tokio::sync::mpsc;
 
@@ -46,7 +46,8 @@ async fn test_say_resolves_only_after_the_device_has_played_everything() {
         states
     });
     let started = Instant::now();
-    let id = speech.say(say("7")).await.unwrap();
+    let (id, outcome) = speech.say(say("7")).await.unwrap();
+    assert_eq!(outcome, Outcome::Done);
     let took = started.elapsed();
     assert_eq!(id, 0);
     assert!(took >= Duration::from_millis(60), "three polls of 20 ms, took {took:?}");
@@ -78,8 +79,8 @@ async fn test_ids_start_at_zero_and_empty_text_is_refused_without_one() {
     let speech = queue(FakeSpeech::marked(), &device);
     assert!(matches!(speech.say(say("")).await, Err(SpeakError::Empty)));
     assert!(matches!(speech.say(say("  \n\t")).await, Err(SpeakError::Empty)));
-    assert_eq!(speech.say(say("1")).await.unwrap(), 0);
-    assert_eq!(speech.say(say("2")).await.unwrap(), 1);
+    assert_eq!(speech.say(say("1")).await.unwrap(), (0, Outcome::Done));
+    assert_eq!(speech.say(say("2")).await.unwrap(), (1, Outcome::Done));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -92,7 +93,7 @@ async fn test_the_queue_is_bounded_and_finishes_in_order() {
     for n in 0..=BACKLOG {
         let (handle, finished) = (speech.clone(), finished.clone());
         waiting.push(tokio::spawn(async move {
-            let id = handle.say(say(&n.to_string())).await.unwrap();
+            let (id, _) = handle.say(say(&n.to_string())).await.unwrap();
             finished.send((n, id)).unwrap();
         }));
         if n == 0 {
@@ -121,7 +122,10 @@ async fn test_the_queue_is_bounded_and_finishes_in_order() {
     assert_eq!(ids, (0..=BACKLOG as u64).collect::<Vec<_>>());
     assert_eq!(fake.texts(), (0..=BACKLOG).map(|n| n.to_string()).collect::<Vec<_>>());
     gate.add_permits(1);
-    assert_eq!(speech.say(say("after")).await.unwrap(), BACKLOG as u64 + 1);
+    assert_eq!(
+        speech.say(say("after")).await.unwrap(),
+        (BACKLOG as u64 + 1, Outcome::Done)
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -129,7 +133,7 @@ async fn test_two_concurrent_says_never_interleave() {
     let device = Device::new(2, 0);
     let speech = queue(FakeSpeech::marked(), &device);
     let (a, b) = tokio::join!(speech.say(say("1")), speech.say(say("2")));
-    assert_eq!(a.unwrap() + b.unwrap(), 1);
+    assert_eq!(a.unwrap().0 + b.unwrap().0, 1);
     let marks = pushes(&device);
     assert_eq!(marks.len(), 6, "{marks:?}");
     assert!(marks[..3].iter().all(|mark| same(*mark, marks[0])), "{marks:?}");
@@ -164,7 +168,7 @@ async fn test_a_say_whose_future_is_dropped_still_plays_to_the_end() {
     }
     assert_eq!(pushes(&device), [5.0, 5.0, 5.0]);
     gate.add_permits(1);
-    assert_eq!(speech.say(say("6")).await.unwrap(), 1);
+    assert_eq!(speech.say(say("6")).await.unwrap(), (1, Outcome::Done));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -222,7 +226,7 @@ async fn test_a_device_that_cannot_open_is_a_device_error_retried_on_the_next_sa
         matches!(first, Err(SpeakError::Device(DeviceError::Output))),
         "{first:?}"
     );
-    assert_eq!(speech.say(say("2")).await.unwrap(), 1);
+    assert_eq!(speech.say(say("2")).await.unwrap(), (1, Outcome::Done));
     assert_eq!(device.opened(), 2);
     assert_eq!(pushes(&device), [2.0, 2.0, 2.0]);
 }

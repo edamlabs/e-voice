@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 enum Order {
     Open(oneshot::Sender<Result<(), DeviceError>>),
     Push(Vec<f32>, NonZeroU32),
+    Clear,
     Pending(oneshot::Sender<f64>),
 }
 
@@ -52,6 +53,12 @@ impl AudioThread {
                 }
                 device
             }
+            Order::Clear => {
+                if let Some(ready) = &device {
+                    ready.clear();
+                }
+                device
+            }
             Order::Pending(reply) => {
                 reply.send(device.as_ref().map_or(0.0, Playback::pending)).ok();
                 device
@@ -88,6 +95,11 @@ impl AudioThread {
     /// Queues `samples` recorded at `rate`; dropped while the device is not open.
     pub fn push(&self, samples: Vec<f32>, rate: NonZeroU32) {
         self.orders.send(Order::Push(samples, rate)).ok();
+    }
+
+    /// Drops whatever the device has not played yet (barge-in).
+    pub fn clear(&self) {
+        self.orders.send(Order::Clear).ok();
     }
 
     /// Seconds the device still has to play; zero when it is not open.

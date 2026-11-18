@@ -288,3 +288,40 @@ async fn test_an_utterance_prints_its_rate_without_its_socket() {
     let shown = format!("{utterance:?}");
     assert!(shown.starts_with("TtsUtterance") && shown.contains("24000"), "{shown}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_sends_the_cancel_message_after_the_text_and_close() {
+    let server = Scripted::start(vec![text(READY)]).await;
+    let mut utterance = TtsSpeech::new(server.url()).say(request("hola")).await.unwrap();
+    utterance.cancel().await.unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while server.seen().messages.len() < 3 {
+        assert!(std::time::Instant::now() < deadline, "{:?}", server.seen().messages);
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        server.seen().messages,
+        [
+            r#"{"text":"hola","type":"text"}"#,
+            r#"{"type":"close"}"#,
+            r#"{"type":"cancel"}"#
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_cancel_on_a_dead_connection_is_a_protocol_error() {
+    let server = Scripted::start(vec![Step::Drop]).await;
+    let mut utterance = TtsSpeech::new(server.url()).say(request("hola")).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let mut failed = false;
+    for _ in 0..50 {
+        if let Err(error) = utterance.cancel().await {
+            assert!(matches!(error, SpeechError::Protocol(_)), "{error:?}");
+            failed = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(failed, "cancelling on a closed socket never failed");
+}

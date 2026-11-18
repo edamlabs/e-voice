@@ -10,3 +10,4 @@ mod audio;
 #[path = "../fake/mod.rs"]
 mod fake;
 mod queue;
+mod stop;

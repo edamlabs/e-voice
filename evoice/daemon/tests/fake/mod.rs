@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 use std::collections::VecDeque;
-use std::future::Future;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use e_voice_daemon::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
 use e_voice_daemon::workflow::audio::AudioThread;
@@ -19,9 +19,13 @@ pub enum Ev {
     Push { rate: u32, len: usize, first: f32 },
     Playing,
     Silent,
+    Clear,
 }
 
 pub type Log = Arc<Mutex<Vec<Ev>>>;
+
+/// The same events with the instant each happened.
+pub type Stamps = Arc<Mutex<Vec<(Instant, Ev)>>>;
 
 pub fn events(log: &Log) -> Vec<Ev> {
     log.lock().unwrap().clone()
@@ -31,14 +35,22 @@ pub fn events(log: &Log) -> Vec<Ev> {
 #[derive(Debug)]
 pub struct FakePlayback {
     log: Log,
+    stamps: Stamps,
     polls: Mutex<u32>,
     drain_polls: u32,
     dropped: Arc<AtomicBool>,
 }
 
+impl FakePlayback {
+    fn record(&self, event: Ev) {
+        self.log.lock().unwrap().push(event.clone());
+        self.stamps.lock().unwrap().push((Instant::now(), event));
+    }
+}
+
 impl Playback for FakePlayback {
     fn push(&self, samples: &[f32], rate: NonZeroU32) {
-        self.log.lock().unwrap().push(Ev::Push {
+        self.record(Ev::Push {
             rate: rate.get(),
             len: samples.len(),
             first: samples.first().copied().unwrap_or_default(),
@@ -46,16 +58,19 @@ impl Playback for FakePlayback {
         *self.polls.lock().unwrap() = self.drain_polls;
     }
 
-    fn clear(&self) {}
+    fn clear(&self) {
+        *self.polls.lock().unwrap() = 0;
+        self.record(Ev::Clear);
+    }
 
     fn pending(&self) -> f64 {
         let mut polls = self.polls.lock().unwrap();
         if *polls > 0 {
             *polls -= 1;
-            self.log.lock().unwrap().push(Ev::Playing);
+            self.record(Ev::Playing);
             0.01
         } else {
-            self.log.lock().unwrap().push(Ev::Silent);
+            self.record(Ev::Silent);
             0.0
         }
     }
@@ -70,8 +85,10 @@ impl Drop for FakePlayback {
 /// The opener an `AudioThread` is given, with the handles a test watches.
 pub struct Device {
     pub log: Log,
+    pub stamps: Stamps,
     pub opens: Arc<AtomicUsize>,
     pub dropped: Arc<AtomicBool>,
+    pub hold_open: Arc<AtomicBool>,
     drain_polls: u32,
     fail_first: usize,
 }
@@ -80,25 +97,33 @@ impl Device {
     pub fn new(drain_polls: u32, fail_first: usize) -> Self {
         Self {
             log: Log::default(),
+            stamps: Stamps::default(),
             opens: Arc::default(),
             dropped: Arc::default(),
+            hold_open: Arc::default(),
             drain_polls,
             fail_first,
         }
     }
 
     pub fn opener(&self) -> impl FnMut() -> Result<FakePlayback, DeviceError> + Send + 'static {
-        let (log, opens, dropped) = (
+        let hold = Arc::clone(&self.hold_open);
+        let (log, stamps, opens, dropped) = (
             Arc::clone(&self.log),
+            Arc::clone(&self.stamps),
             Arc::clone(&self.opens),
             Arc::clone(&self.dropped),
         );
         let (drain_polls, fail_first) = (self.drain_polls, self.fail_first);
         move || {
             let attempt = opens.fetch_add(1, Ordering::SeqCst);
+            while hold.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
             (attempt >= fail_first)
                 .then(|| FakePlayback {
                     log: Arc::clone(&log),
+                    stamps: Arc::clone(&stamps),
                     polls: Mutex::new(0),
                     drain_polls,
                     dropped: Arc::clone(&dropped),
@@ -137,6 +162,10 @@ pub struct FakeSpeech {
     pub gate: Option<Arc<Semaphore>>,
     pub fail_say: Option<SpeechError>,
     pub panic_say: bool,
+    pub period: Option<Duration>,
+    pub cancels: Arc<AtomicUsize>,
+    pub cancel_error: Option<SpeechError>,
+    pub cancel_delay: Duration,
 }
 
 impl FakeSpeech {
@@ -147,6 +176,10 @@ impl FakeSpeech {
             gate: None,
             fail_say: None,
             panic_say: false,
+            period: None,
+            cancels: Arc::default(),
+            cancel_error: None,
+            cancel_delay: Duration::ZERO,
         }
     }
 
@@ -176,11 +209,24 @@ impl FakeSpeech {
 
 pub struct FakeUtterance {
     frames: VecDeque<Result<Frame, SpeechError>>,
+    period: Option<Duration>,
+    cancels: Arc<AtomicUsize>,
+    cancel_error: Option<SpeechError>,
+    cancel_delay: Duration,
 }
 
 impl Utterance for FakeUtterance {
-    fn frame(&mut self) -> impl Future<Output = Option<Result<Frame, SpeechError>>> + Send {
-        std::future::ready(self.frames.pop_front())
+    async fn frame(&mut self) -> Option<Result<Frame, SpeechError>> {
+        if let Some(period) = self.period {
+            tokio::time::sleep(period).await;
+        }
+        self.frames.pop_front()
+    }
+
+    async fn cancel(&mut self) -> Result<(), SpeechError> {
+        self.cancels.fetch_add(1, Ordering::SeqCst);
+        tokio::time::sleep(self.cancel_delay).await;
+        self.cancel_error.clone().map_or(Ok(()), Err)
     }
 }
 
@@ -198,6 +244,10 @@ impl Speech for FakeSpeech {
         }
         Ok(FakeUtterance {
             frames: (self.script)(&request).into(),
+            period: self.period,
+            cancels: Arc::clone(&self.cancels),
+            cancel_error: self.cancel_error.clone(),
+            cancel_delay: self.cancel_delay,
         })
     }
 }
@@ -216,4 +266,11 @@ pub fn say(text: &str) -> SpeechRequest {
 
 pub fn same(left: f32, right: f32) -> bool {
     (left - right).abs() < 1e-6
+}
+
+/// Frames that keep coming: `count` frames of `marker`, spaced by the fake's period.
+pub fn long(count: usize, marker: f32) -> FakeSpeech {
+    let mut speech = FakeSpeech::new(move |_| (0..count).map(|_| Ok(frame(marker, 4))).collect());
+    speech.period = Some(Duration::from_millis(80));
+    speech
 }

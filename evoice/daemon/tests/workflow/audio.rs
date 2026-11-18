@@ -95,3 +95,25 @@ async fn test_dropping_the_handle_ends_the_thread_and_closes_the_device() {
     drop(audio);
     until("the device to be dropped", || device.dropped.load(Ordering::SeqCst)).await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_clear_is_a_no_op_while_the_device_is_not_open() {
+    let device = Device::new(0, 0);
+    let audio = device.thread();
+    audio.clear();
+    assert_eq!(audio.pending().await, 0.0);
+    assert_eq!(device.opened(), 0);
+    assert_eq!(events(&device.log), Vec::<Ev>::new());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_clear_after_open_reaches_the_device_and_drops_what_it_held() {
+    let device = Device::new(5, 0);
+    let audio = device.thread();
+    audio.open().await.unwrap();
+    audio.push(vec![0.1; 4], rate());
+    audio.clear();
+    assert_eq!(audio.pending().await, 0.0);
+    let log = events(&device.log);
+    assert_eq!(log[1], Ev::Clear, "{log:?}");
+}

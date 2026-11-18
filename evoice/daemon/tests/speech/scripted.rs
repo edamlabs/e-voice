@@ -83,7 +83,11 @@ impl Scripted {
                     return;
                 }
             }
-            let _ = socket.next().await;
+            while let Some(Ok(message)) = socket.next().await {
+                if let Message::Text(text) = message {
+                    record.lock().unwrap().messages.push(text.to_string());
+                }
+            }
         });
         Self { address, seen }
     }

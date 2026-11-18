@@ -1,5 +1,6 @@
 use std::fmt::{self, Debug};
 use std::num::NonZeroU32;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -10,6 +11,11 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
 
 use crate::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
+
+/// The longest a connect plus WebSocket handshake may take. The service is local, so seconds is already
+/// generous; past it the host is dead or black-holed, and the queue must move on rather than wait out the
+/// OS connect timeout.
+const CONNECT: Duration = Duration::from_secs(5);
 
 /// What the TTS stream sends besides audio; anything else (`start`, …) is skipped.
 #[derive(Debug, Deserialize)]
@@ -54,8 +60,9 @@ impl Speech for TtsSpeech {
             .append_pair("format", "f32")
             .extend_pairs(request.lang.map(|lang| ("lang", lang.code())))
             .extend_pairs(request.voice.as_deref().map(|voice| ("voice", voice)));
-        let (mut socket, _) = tokio_tungstenite::connect_async(url.as_str())
+        let (mut socket, _) = tokio::time::timeout(CONNECT, tokio_tungstenite::connect_async(url.as_str()))
             .await
+            .map_err(|_| SpeechError::Connect(format!("no handshake within {} s", CONNECT.as_secs())))?
             .map_err(|error| SpeechError::Connect(error.to_string()))?;
         let lost = |error: SocketError| SpeechError::Protocol(error.to_string());
         let text = json!({"type": "text", "text": request.text}).to_string();
@@ -123,5 +130,13 @@ impl Utterance for TtsUtterance {
             }
         }
         Some(Err(Self::frame_early()))
+    }
+
+    async fn cancel(&mut self) -> Result<(), SpeechError> {
+        let cancel = json!({"type": "cancel"}).to_string();
+        self.socket
+            .send(Message::text(cancel))
+            .await
+            .map_err(|error| SpeechError::Protocol(error.to_string()))
     }
 }

@@ -8,6 +8,7 @@ use tokio::net::TcpListener;
 use crate::api::health::health;
 use crate::api::speak::speak;
 use crate::api::state::AppState;
+use crate::api::stop::stop;
 use crate::core::settings::Settings;
 
 #[derive(Debug, thiserror::Error)]
@@ -30,6 +31,7 @@ impl Server {
         Router::new()
             .route("/health", get(health))
             .route("/speak", post(speak))
+            .route("/stop", post(stop))
             .with_state(state)
     }
 

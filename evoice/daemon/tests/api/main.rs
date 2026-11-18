@@ -6,6 +6,7 @@
     clippy::expect_used
 )]
 
+mod connect;
 #[path = "../fake/mod.rs"]
 mod fake;
 mod health;
@@ -13,3 +14,4 @@ mod http;
 mod running;
 mod server;
 mod speak;
+mod stop;

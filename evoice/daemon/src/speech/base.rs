@@ -40,4 +40,7 @@ pub trait Speech: Send + Sync + 'static {
 pub trait Utterance: Send + 'static {
     /// The next frame; `None` once the service has finished the text.
     fn frame(&mut self) -> impl Future<Output = Option<Result<Frame, SpeechError>>> + Send;
+
+    /// Tells the service to stop this text; no frame is read after it.
+    fn cancel(&mut self) -> impl Future<Output = Result<(), SpeechError>> + Send;
 }
