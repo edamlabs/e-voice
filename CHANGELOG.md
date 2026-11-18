@@ -8,6 +8,16 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Added
 
+- `evoiced`, the daemon that owns the speaker (TODO_vehicle step 7, in progress): `evoiced serve` on
+  `127.0.0.1:5700` — loopback unless `[daemon] host` says otherwise, never the services' `[server] host`.
+  `GET /health`; `POST /speak {text, voice?, lang?}` plays through the TTS service one voice at a time and answers
+  when the audio has drained (a queue of 16, 429 past it). `[daemon]` keys: `port`, `host`, `tts`, `output`. The
+  services accept the `[daemon]` table of the shared `evoice.toml`. Evidence: 76 daemon tests with a scripted TTS
+  server and a fake sink; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage` 90.32 % lines.
+  Not yet: `/stop`, `/listen`, `/events`; no real speaker has been heard through it.
+- `evoice/device`: the microphone and speaker code of `ecli` as a library; `ecli`'s commands and output are
+  byte-identical. `evoice/core` gains an `engine` feature (on by default) so a crate can use its settings, logging
+  and resampling without linking the model runtime.
 - STT diarization node (TODO_vehicle step 2): `[stt.pipeline.diarize]`, off by default, on sherpa-onnx's offline
   speaker diarization (pyannote segmentation 3.0 + WeSpeaker ResNet34-LM), run over an uploaded file beside its
   transcription, and only when the request asks. Each segment takes the speaker that overlaps it longest, numbered
