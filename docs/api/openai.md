@@ -40,6 +40,8 @@ protocol. Both the GA (`session.*`) and beta (`transcription_session.*`) event n
 | `input_audio_buffer.commit` / `clear` | acknowledged; server VAD always segments |
 | `session.close` | drains pending segments, then closes with 1000 |
 
+Events are capped at 16 MiB: past the cap the socket is closed with 1009; the server does not wait for the client's close reply, and a client still sending a single frame larger than the cap may see the connection reset before it reads the close.
+
 Server events:
 
 - `session.created` / `session.updated`;

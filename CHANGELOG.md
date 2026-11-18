@@ -52,6 +52,26 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Security
 
+- No number a client sends sizes the services' memory (TODO_VOICE-HELM_harden, in progress). Both listen on
+  `0.0.0.0` by default.
+  - Sample rate: refused above 384 kHz before any allocation. A rate of `4294967295` — in a socket's `rate`, a
+    file's header or a voice clip — reserved about 2.3 GB and aborted the process. Sockets close 1003, uploads 400.
+  - Decoded duration: `[stt.api] duration` (default `4h`) bounds what an upload decodes to, as `upload` bounds the
+    bytes received; decoding stops at the cap and every door answers 413 in its own error shape. A 7 MB FLAC of ten
+    hours of silence costs 10 MiB instead of 2.3 GB. A 61-min meeting still goes through whole (438 segments, RTF
+    0.068).
+  - Deepgram's prerecorded door answers a body past `upload` in Deepgram's error envelope, not plain text.
+  - WebSocket messages are capped: 2 MiB on the audio sockets, 16 MiB on OpenAI Realtime, 64 KiB on the TTS text
+    socket (the default let one legal 16 MiB frame cost the native socket 126 MB; a legal 2 MiB frame now costs
+    11.6 MiB). A client past the cap is closed with 1009 and a reason, not a normal close; the server does not wait
+    for the client's close reply.
+  - TTS text: at most 4096 characters per request on `/v1/audio/speech` and per `text` message on the native
+    socket; that door's body is capped at 64 KiB. A malformed, invalid or oversized body is now answered in the
+    JSON error shape with its own status (400, 413, 415, 422) — it used to be plain text.
+  - Header numbers (channels, packet sizes) were read in the decoder and size nothing beyond one packet: a
+    26-channel WAV decodes, 27 channels are refused. ADPCM is not compiled in.
+  - `POST /v1/voices` stops decoding clips at 30 s in total; its `seconds` now reports the audio learned (at most
+    30), not the length uploaded. The audio the voice is learned from is sample-identical to before.
 - rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.11, tokio 1.54.1: past their
   RustSec advisories. zip stays behind (npyz needs `^0.6`, sherpa-onnx-sys builds with 2.x; the fixes land in
   9.0); e-voice never calls `ZipArchive::extract`, the affected path.

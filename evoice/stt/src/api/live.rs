@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use e_voice_core::audio::{AudioEncoding, AudioError, AudioIngest};
 use e_voice_core::schema::lang::Lang;
@@ -15,7 +17,17 @@ use crate::workflow::runner::{RunnerError, RunnerIntake};
 
 pub const NORMAL: u16 = 1000;
 pub const UNSUPPORTED: u16 = 1003;
+/// RFC 6455 «Message Too Big».
+pub const TOO_BIG: u16 = 1009;
 pub const INTERNAL: u16 = 1011;
+/// How long a socket closed with 1009 stays open before it is dropped. The refused frame's payload may
+/// still be arriving; dropping at once makes the kernel reset the connection, and the reset can reach
+/// the client before the close does. Nothing is read meanwhile.
+pub const LINGER: Duration = Duration::from_secs(1);
+
+/// The largest message or frame an audio socket takes: 2 MiB, over a second of the highest rate
+/// accepted (`MAX_RATE`) in f32. Realtime clients send tens of milliseconds at a time.
+pub const AUDIO_MESSAGE: usize = 2_097_152;
 
 /// What a client frame means, in protocol-neutral terms.
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +83,7 @@ pub struct LiveStream {
     lang: Lang,
     rate: u32,
     encoding: AudioEncoding,
+    cap: usize,
     received: usize,
     peak: f32,
     ended: bool,
@@ -78,6 +91,13 @@ pub struct LiveStream {
 
 impl LiveStream {
     // ##### PRIVATE #####
+
+    /// Whether a read failed because the client's message or frame passed the socket's cap.
+    fn serve_oversized(error: &axum::Error) -> bool {
+        std::error::Error::source(error)
+            .and_then(|source| source.downcast_ref::<tungstenite::Error>())
+            .is_some_and(|error| matches!(error, tungstenite::Error::Capacity(_)))
+    }
 
     fn serve_open(
         &self,
@@ -179,11 +199,13 @@ impl LiveStream {
     // ##### PUBLIC #####
 
     #[must_use]
-    pub const fn new(lang: Lang, rate: u32, encoding: AudioEncoding) -> Self {
+    /// `cap` is the socket's message limit, named in the close reason when a client passes it.
+    pub const fn new(lang: Lang, rate: u32, encoding: AudioEncoding, cap: usize) -> Self {
         Self {
             lang,
             rate,
             encoding,
+            cap,
             received: 0,
             peak: 0.0,
             ended: false,
@@ -206,7 +228,11 @@ impl LiveStream {
                 message = source.next(), if reading => {
                     let inbound = match message {
                         Some(Ok(message)) => protocol.parse(message),
-                        Some(Err(_)) | None => vec![Inbound::Close],
+                        Some(Err(error)) => {
+                            code = if Self::serve_oversized(&error) { TOO_BIG } else { code };
+                            vec![Inbound::Close]
+                        }
+                        None => vec![Inbound::Close],
                     };
                     for step in inbound {
                         match self.serve_step(step, &state, &cancel, &mut run, &mut events, &mut sink).await {
@@ -258,14 +284,26 @@ impl LiveStream {
             ended: self.ended,
         };
         for frame in protocol.farewell(&outcome) {
-            sink.send(frame).await.ok();
+            if let Err(error) = sink.send(frame).await {
+                tracing::warn!(%error, code = outcome.code, "stream.farewell.failed");
+            }
         }
-        sink.send(Message::Close(Some(CloseFrame {
-            code: outcome.code,
-            reason: "".into(),
-        })))
-        .await
-        .ok();
+        let reason = match outcome.code {
+            TOO_BIG => format!("message over {} bytes", self.cap),
+            _ => String::new(),
+        };
+        if let Err(error) = sink
+            .send(Message::Close(Some(CloseFrame {
+                code: outcome.code,
+                reason: reason.into(),
+            })))
+            .await
+        {
+            tracing::warn!(%error, code = outcome.code, "stream.close.failed");
+        }
+        if outcome.code == TOO_BIG {
+            tokio::time::sleep(LINGER).await;
+        }
         tracing::info!(lang = ?self.lang, ended = outcome.ended, code = outcome.code, seconds = outcome.seconds, peak_db = outcome.peak_db, "stream.closed");
     }
 }

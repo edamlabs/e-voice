@@ -15,6 +15,7 @@ lang = "es"                                  # es | en   (requests may override)
 [stt.api]
 port = 5500
 upload = 25                                  # MiB per transcription request
+duration = "4h"                              # longest audio an upload may decode to; past it → 413
 emotion = "field"                            # field | tag | off   (tag also prefixes text: "[angry] …")
 
 [stt.pipeline]

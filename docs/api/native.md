@@ -32,4 +32,5 @@ drains pending segments. Closing the socket cancels the run.
   sets `error`.
 - On shutdown (SIGTERM) open segments are finalized before the socket closes.
 
-**Close codes.** 1000 normal, 1003 unsupported parameters, 1011 pipeline failure.
+**Close codes.** 1000 normal, 1003 unsupported parameters, 1009 message over 2 MiB, 1011 pipeline failure.
+Messages are capped at 2 MiB: past the cap the socket is closed with 1009; the server does not wait for the client's close reply, and a client still sending a single frame larger than the cap may see the connection reset before it reads the close.

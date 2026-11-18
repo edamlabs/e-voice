@@ -32,6 +32,9 @@ pub enum ApiError {
     Train(#[from] TrainError),
     #[error(transparent)]
     Runner(#[from] RunnerError),
+    /// A request axum refused before the handler: an oversized body, malformed or invalid JSON.
+    #[error("{1}")]
+    Rejected(StatusCode, String),
 }
 
 impl ApiError {
@@ -48,6 +51,7 @@ impl ApiError {
             Self::Voice(VoiceError::Io(_)) | Self::Train(TrainError::Backend(_)) | Self::Runner(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+            Self::Rejected(status, _) => *status,
         }
     }
 }

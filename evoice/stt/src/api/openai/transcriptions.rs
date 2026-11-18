@@ -22,8 +22,8 @@ use crate::schema::transcript::Transcript;
 ///
 /// # Errors
 /// 400 for a bad form, language, format, emotion mode, undecodable file, or `diarized_json` while
-/// diarization is off; 413 over the upload
-/// limit; 500 when the pipeline fails or any segment fails.
+/// diarization is off; 413 over the upload limit or past the duration limit (`[stt.api] duration`); 500
+/// when the pipeline fails or any segment fails.
 #[utoipa::path(
     post,
     path = "/v1/audio/transcriptions",
@@ -36,7 +36,7 @@ use crate::schema::transcript::Transcript;
         (status = 200, description = "`text`, `srt` or `vtt`", body = String, content_type = "text/plain"),
         (status = 200, description = "`stream=true`: `transcript.text.delta` … `transcript.text.done`", content_type = "text/event-stream"),
         (status = 400, description = "Invalid request (OpenAI error shape)"),
-        (status = 413, description = "Upload over the limit"),
+        (status = 413, description = "Over the upload or duration limit (OpenAI error shape)"),
     )
 )]
 pub async fn transcriptions(State(state): State<AppState>, multipart: Multipart) -> Result<Response, OpenaiError> {

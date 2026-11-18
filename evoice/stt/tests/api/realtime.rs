@@ -78,3 +78,28 @@ async fn test_unsupported_language_is_rejected_before_upgrade() {
     let refused = tokio_tungstenite::connect_async(format!("{}&language=fr", base().await)).await;
     assert!(refused.is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_realtime_refuses_an_absurd_session_rate_with_1003() {
+    let address = base().await;
+    for rate in [u32::MAX, 384_001, 0] {
+        let frames = vec![
+            Message::Text(json!({"type": "session.update", "session": {"type": "transcription", "audio": {"input": {"format": {"type": "audio/pcm", "rate": rate}}}}}).to_string().into()),
+            append(0.9, 1_600),
+        ];
+        let (_, code) = exchange(&address, frames).await;
+        assert_eq!(code, Some(1003), "rate {rate}");
+    }
+    let health = reqwest::get(
+        address
+            .replace("ws://", "http://")
+            .split("/v1/")
+            .next()
+            .unwrap()
+            .to_owned()
+            + "/health",
+    )
+    .await
+    .unwrap();
+    assert_eq!(health.status(), 200);
+}

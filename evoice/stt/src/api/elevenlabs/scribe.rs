@@ -48,6 +48,10 @@ impl From<BatchError> for ScribeError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 message,
             },
+            BatchError::TooLong(message) => Self {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                message,
+            },
         }
     }
 }
@@ -98,7 +102,11 @@ pub struct ScribeResponse {
     path = "/v1/speech-to-text",
     tag = "elevenlabs",
     request_body(content = ScribeForm, content_type = "multipart/form-data"),
-    responses((status = 200, body = ScribeResponse), (status = 400, description = "Invalid request (ElevenLabs error shape)"))
+    responses(
+        (status = 200, body = ScribeResponse),
+        (status = 400, description = "Invalid request (ElevenLabs error shape)"),
+        (status = 413, description = "Over the upload or duration limit (ElevenLabs error shape)"),
+    )
 )]
 pub async fn scribe(
     State(state): State<AppState>,

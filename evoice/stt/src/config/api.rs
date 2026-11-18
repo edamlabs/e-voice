@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 /// How emotion reaches clients: `field` adds `emotion` objects to JSON responses and events, `tag`
@@ -12,12 +14,16 @@ pub enum EmotionMode {
     Off,
 }
 
-/// The STT API: its port, the transcription upload cap in MiB and emotion exposure.
+/// The STT API: its port, the transcription upload cap in MiB, the longest audio an upload may decode
+/// to, and emotion exposure. `upload` bounds the bytes received; `duration` bounds what they decode to,
+/// so a small, highly compressed file cannot expand into memory past it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ApiConfig {
     pub port: u16,
     pub upload: usize,
+    #[serde(with = "humantime_serde")]
+    pub duration: Duration,
     pub emotion: EmotionMode,
 }
 
@@ -26,6 +32,7 @@ impl Default for ApiConfig {
         Self {
             port: 5500,
             upload: 25,
+            duration: Duration::from_secs(14_400),
             emotion: EmotionMode::Field,
         }
     }

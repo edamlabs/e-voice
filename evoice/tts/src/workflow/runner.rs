@@ -14,6 +14,10 @@ use crate::workflow::session::{Session, SessionCommand, SessionInput, SessionOut
 use crate::workflow::synth::base::{Synth, SynthCaps, SynthSession};
 use crate::workflow::text::Chunker;
 
+/// The most text, in characters, one speech request or one streamed text message may carry: the work a
+/// single request can ask for. OpenAI documents the same maximum for its speech input.
+pub const INPUT: usize = 4_096;
+
 /// What a client may ask of a stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {

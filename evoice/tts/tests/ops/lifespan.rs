@@ -33,7 +33,13 @@ async fn test_lifespan_builds_pocket_learns_a_voice_and_speaks_both_languages() 
     let (runner, _) = Lifespan::runner(&settings).await.unwrap();
     let rate = runner.caps().rate;
     let clip = root().join("data/tts/ops/vendor/pocket-tts-onnx-export/pocket_tts/config/jos.wav");
-    let audio = AudioFile::decode(std::fs::read(&clip).unwrap(), Some("wav"), rate).unwrap();
+    let audio = AudioFile::decode(
+        std::fs::read(&clip).unwrap(),
+        Some("wav"),
+        rate,
+        std::time::Duration::MAX,
+    )
+    .unwrap();
     let voice = runner.synth().train(&[audio.clone().into()], None).unwrap();
     for (lang, text) in [
         (Lang::Es, "Hola, esto es una prueba."),

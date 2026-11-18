@@ -1,4 +1,6 @@
-use e_voice_core::audio::AudioFile;
+use std::time::Duration;
+
+use e_voice_core::audio::{AudioError, AudioFile};
 use e_voice_core::schema::lang::Lang;
 use tokio::sync::mpsc;
 
@@ -18,6 +20,8 @@ pub enum BatchError {
     Model(String),
     #[error("{0}")]
     Failed(String),
+    #[error("{0}")]
+    TooLong(String),
 }
 
 /// An uploaded file through the lossless file intake: the path every REST protocol shares.
@@ -52,15 +56,21 @@ impl Batch {
         })
     }
 
-    /// Container sniffing, decoding and resampling, off the async threads.
+    /// Container sniffing, decoding and resampling, off the async threads; decoding stops as soon as the
+    /// audio passes `limit`.
     ///
     /// # Errors
-    /// The bytes are not decodable audio.
-    pub async fn decode(bytes: Vec<u8>, extension: Option<String>) -> Result<Vec<f32>, BatchError> {
-        tokio::task::spawn_blocking(move || AudioFile::decode(bytes, extension.as_deref(), RATE))
+    /// The bytes are not decodable audio, or they decode to more than `limit`.
+    pub async fn decode(bytes: Vec<u8>, extension: Option<String>, limit: Duration) -> Result<Vec<f32>, BatchError> {
+        tokio::task::spawn_blocking(move || AudioFile::decode(bytes, extension.as_deref(), RATE, limit))
             .await
             .map_err(|error| BatchError::Failed(error.to_string()))?
-            .map_err(|error| BatchError::Decode(error.to_string()))
+            .map_err(|error| match error {
+                AudioError::TooLong(_) => BatchError::TooLong(error.to_string()),
+                AudioError::Rate(_) | AudioError::Resample(_) | AudioError::Container(_) => {
+                    BatchError::Decode(error.to_string())
+                }
+            })
     }
 
     /// The whole transcript; a failed segment fails the request rather than silently dropping text.
@@ -76,7 +86,7 @@ impl Batch {
         diarization: Diarization,
     ) -> Result<Transcript, BatchError> {
         let runner = Self::runner(state, model)?;
-        let samples = Self::decode(bytes, extension).await?;
+        let samples = Self::decode(bytes, extension, state.duration).await?;
         tracing::info!(
             ?lang,
             seconds = Transcript::seconds(samples.len() as u64),
@@ -114,7 +124,7 @@ impl Batch {
         diarization: Diarization,
     ) -> Result<(mpsc::Receiver<Event>, f64), BatchError> {
         let runner = Self::runner(state, model)?;
-        let samples = Self::decode(bytes, extension).await?;
+        let samples = Self::decode(bytes, extension, state.duration).await?;
         let seconds = Transcript::seconds(samples.len() as u64);
         Ok((runner.file(lang, samples, diarization), seconds))
     }

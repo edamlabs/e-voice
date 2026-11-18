@@ -57,6 +57,25 @@ impl Synth for FakeSynth {
     }
 }
 
+/// A backend whose every worker is taken.
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct FakeBusy;
+
+impl Synth for FakeBusy {
+    fn caps(&self) -> SynthCaps {
+        CAPS
+    }
+
+    fn open(&self, _lang: Lang, _voice: Option<&VoiceState>) -> Result<Box<dyn SynthSession>, BackendError> {
+        Err(BackendError::Busy("fake"))
+    }
+
+    fn train(&self, _clips: &[Audio], _text: Option<&str>) -> Result<VoiceState, TrainError> {
+        Err(TrainError::Empty)
+    }
+}
+
 impl Synth for FakeWhole {
     fn caps(&self) -> SynthCaps {
         CAPS

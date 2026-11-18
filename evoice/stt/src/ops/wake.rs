@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use e_voice_core::audio::AudioFile;
 use e_voice_core::models::ModelStore;
@@ -131,7 +132,7 @@ impl Wake {
         if voices.is_empty() {
             return Err(WakeError::Model(Voice::IDS.join(", ")));
         }
-        let pad = vec![0.0f32; usize::try_from(Audio::length(std::time::Duration::from_millis(500))).unwrap_or(8_000)];
+        let pad = vec![0.0f32; usize::try_from(Audio::length(Duration::from_millis(500))).unwrap_or(8_000)];
         let padded = |speech: Vec<f32>| [pad.clone(), speech, pad.clone()].concat();
         let mut positives = Vec::new();
         let mut negatives = Vec::new();
@@ -155,7 +156,7 @@ impl Wake {
             for item in items.into_iter().take(limit) {
                 let decoded = std::fs::read(&item.audio)
                     .ok()
-                    .and_then(|bytes| AudioFile::decode(bytes, Some("wav"), RATE).ok());
+                    .and_then(|bytes| AudioFile::decode(bytes, Some("wav"), RATE, Duration::MAX).ok());
                 negatives.extend(decoded.map(padded));
             }
         }

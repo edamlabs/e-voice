@@ -11,6 +11,10 @@ mod app;
 #[allow(dead_code)]
 #[path = "../workflow/fake.rs"]
 mod fake;
+mod frames;
+#[allow(dead_code)]
+#[path = "../../../core/tests/support/rawws.rs"]
+mod rawws;
 mod speech;
 mod stream;
 mod voices;
