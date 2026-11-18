@@ -1,0 +1,9 @@
+Listen once through the daemon and print what was heard¶
+¶
+Usage: ecli listen [OPTIONS]¶
+¶
+Options:¶
+      --struct             The heard segment as one JSON line: text, lang and emotion¶
+      --timeout <TIMEOUT>  How long to wait for someone to start speaking (e.g. 8s); the daemon's default when omitted¶
+      --url <URL>          Daemon base URL [env: ECLI_DAEMON_URL=] [default: http://127.0.0.1:5700]¶
+  -h, --help               Print help¶

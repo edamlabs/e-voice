@@ -1,0 +1,12 @@
+Speak a text through the daemon and wait until it has played¶
+¶
+Usage: ecli say [OPTIONS] <TEXT>¶
+¶
+Arguments:¶
+  <TEXT>  Text to speak¶
+¶
+Options:¶
+      --voice <VOICE>  Voice; the speech service's default when omitted¶
+      --lang <LANG>    Language (es, en); the speech service's default when omitted¶
+      --url <URL>      Daemon base URL [env: ECLI_DAEMON_URL=] [default: http://127.0.0.1:5700]¶
+  -h, --help           Print help¶

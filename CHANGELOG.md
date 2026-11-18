@@ -8,13 +8,23 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Added
 
-- `evoiced`, the daemon that owns the speaker (TODO_vehicle step 7, in progress): `evoiced serve` on
+- `evoiced`, the daemon that owns the microphone and the speaker (TODO_vehicle step 7): `evoiced serve` on
   `127.0.0.1:5700` — loopback unless `[daemon] host` says otherwise, never the services' `[server] host`.
-  `GET /health`; `POST /speak {text, voice?, lang?}` plays through the TTS service one voice at a time and answers
-  when the audio has drained (a queue of 16, 429 past it). `[daemon]` keys: `port`, `host`, `tts`, `output`. The
-  services accept the `[daemon]` table of the shared `evoice.toml`. Evidence: 76 daemon tests with a scripted TTS
-  server and a fake sink; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage` 90.32 % lines.
-  Not yet: `/stop`, `/listen`, `/events`; no real speaker has been heard through it.
+  - `POST /speak {text, voice?, lang?}`: through the TTS service, one voice at a time, answering when the audio has
+    drained. At most 4096 characters, a queue of 16 (429 past it), never more than 2 s of audio held ahead of the
+    speaker.
+  - `POST /stop`: the voice cut within a frame and the queue emptied; the cut requests answer `cancelled`.
+  - `POST /listen {timeout?}`: the microphone opened for one utterance, answered as text, language and emotion.
+    The timeout (`[daemon] listen`, 15 s; at most 300 s) bounds the wait for someone to start speaking.
+  - `GET /events`: a WebSocket of the daemon's events — speech states, listening open and closed, partials, what
+    was heard, and `lagged` for a subscriber that fell behind; at most 16 subscribers.
+  - `GET /health`. `[daemon]` keys: `host`, `port`, `tts`, `stt`, `output`, `input`, `listen`; the services accept
+    the table in the shared `evoice.toml`. A daemon that cannot install its SIGTERM handler does not start.
+  - `ecli say | stop | listen`: thin clients of the daemon (`--url`, `ECLI_DAEMON_URL`); `listen --struct` prints
+    text, language and emotion as one JSON line.
+  - Evidence: every endpoint proven against scripted TTS and STT servers and fake devices; `ldd evoiced` free of
+    sherpa-onnx and onnxruntime; `make coverage` 91.23 % lines. Not proven: no real speaker or microphone has been
+    heard through it — no test can.
 - `evoice/device`: the microphone and speaker code of `ecli` as a library; `ecli`'s commands and output are
   byte-identical. `evoice/core` gains an `engine` feature (on by default) so a crate can use its settings, logging
   and resampling without linking the model runtime.

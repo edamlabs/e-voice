@@ -1040,6 +1040,8 @@ dependencies = [
  "e-voice-device",
  "futures-util",
  "hound",
+ "reqwest",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",

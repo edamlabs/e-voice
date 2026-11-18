@@ -1,0 +1,14 @@
+Stream text to the TTS gateway and play the voice as it is generated¶
+¶
+Usage: ecli tts [OPTIONS] [TEXT]¶
+¶
+Arguments:¶
+  [TEXT]  ¶
+¶
+Options:¶
+      --url <URL>      TTS gateway base URL [env: ECLI_TTS_URL=] [default: ws://127.0.0.1:5600]¶
+      --lang <LANG>    ¶
+      --voice <VOICE>  Learned voice id; the server default when omitted¶
+      --out <OUT>      Also save the received audio to this WAV file¶
+      --mute           Do not play (with --out: just record)¶
+  -h, --help           Print help¶

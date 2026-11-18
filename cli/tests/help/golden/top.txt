@@ -1,0 +1,13 @@
+Terminal tester for the e-voice gateway¶
+¶
+Usage: ecli <COMMAND>¶
+¶
+Commands:¶
+  stt      Stream speech to the gateway and print transcripts as they arrive¶
+  tts      Stream text to the TTS gateway and play the voice as it is generated¶
+  devices  List audio inputs; `*` marks the system default¶
+  help     Print this message or the help of the given subcommand(s)¶
+¶
+Options:¶
+  -h, --help     Print help¶
+  -V, --version  Print version¶

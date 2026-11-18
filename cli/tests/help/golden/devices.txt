@@ -1,0 +1,6 @@
+List audio inputs; `*` marks the system default¶
+¶
+Usage: ecli devices¶
+¶
+Options:¶
+  -h, --help  Print help¶

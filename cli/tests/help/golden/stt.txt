@@ -1,0 +1,13 @@
+Stream speech to the gateway and print transcripts as they arrive¶
+¶
+Usage: ecli stt [OPTIONS]¶
+¶
+Options:¶
+      --flat             Plain text: finals on stdout, the live partial redrawn on stderr (default)¶
+      --struct           Every event as one JSON line: wake, partial, final (with emotion and spans), closed¶
+      --url <URL>        Gateway base URL [env: ECLI_STT_URL=] [default: ws://127.0.0.1:5500]¶
+      --lang <LANG>      Spoken language; the server default when omitted¶
+      --device <DEVICE>  Input device whose name contains this text; the system default when omitted¶
+      --wav <WAV>        Replay this WAV in real time instead of opening the microphone¶
+      --record <RECORD>  Also save exactly what is sent (mono s16le at the source rate) to this WAV file¶
+  -h, --help             Print help¶
