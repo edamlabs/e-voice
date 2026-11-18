@@ -62,7 +62,7 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Security
 
-- No number a client sends sizes the services' memory (TODO_VOICE-HELM_harden, in progress). Both listen on
+- No number a client sends sizes the services' memory (TODO_VOICE-HELM_harden). Both listen on
   `0.0.0.0` by default.
   - Sample rate: refused above 384 kHz before any allocation. A rate of `4294967295` — in a socket's `rate`, a
     file's header or a voice clip — reserved about 2.3 GB and aborted the process. Sockets close 1003, uploads 400.

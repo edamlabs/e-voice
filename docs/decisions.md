@@ -58,3 +58,20 @@ Reproduced in a clean container with managed Pythons only: 3.15.1 fails, 3.14.9 
 
 **Rejected.** polars 2.1.0 (passes on 3.15, but a major bump the benchmark's tests do not cover end to end; Renovate
 proposes it on its own terms); capping `requires-python` (the floor is a contract, the pin is the runtime).
+
+### 2026-11-18 · The services bound memory per request; the proxy bounds the number of requests
+
+**Decision.** No number a client sends sizes an allocation in stt or tts: sample rate (384 kHz), decoded duration
+of an upload (`[stt.api] duration`, 4 h by default), WebSocket message size (2 MiB on the audio sockets, 16 MiB on
+OpenAI Realtime, 64 KiB on the TTS text socket), TTS text (4096 characters). The number of connections a client
+opens, rate limiting and authentication are not the services' concern: they belong in front of them.
+
+**Evidence.** A rate of `4294967295` reserved about 2.3 GB and aborted the process; a 7 MB FLAC of ten hours of
+silence decoded to 2.3 GB, now 10 MiB at peak; a legal 16 MiB frame cost the native socket 126 MB, a legal 2 MiB
+frame now costs 11.6 MiB. A 61-min meeting still goes through whole at the default (438 segments, none failed).
+The default of 4 h costs up to 922 MB of decoded audio per upload: the price of letting long meetings through.
+
+**Rejected.** A fixed duration cap in code (a deployment's choice, and a low one would break long uploads); a
+connection limit inside the services (a second, weaker copy of what the proxy does); completing the WebSocket
+closing handshake after an oversized frame by upgrading below axum (a large change for a misbehaving client's
+courtesy — the close 1009 is sent and the server lingers one second instead).

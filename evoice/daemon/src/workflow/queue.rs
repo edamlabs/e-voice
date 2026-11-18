@@ -15,8 +15,16 @@ pub const BACKLOG: usize = 16;
 /// Stop orders that may wait for the queue's task; a sender beyond them waits its turn.
 const CONTROLS: usize = 4;
 
-/// How often a finished utterance asks the device whether it has played everything. The queue's only
-/// poll, confined to [`SpeechQueue::start_drain`]: an event from the sink can replace it there alone.
+/// The most characters one text may carry: what a spoken turn can reasonably be (≈ 4.5 min of speech),
+/// and the TTS service's own limit on what one request may ask, which the daemon must never exceed.
+pub const TEXT: usize = 4_096;
+
+/// The most audio the device may hold ahead of what it plays. The reader stops pulling from the speech
+/// service past it, so memory is bounded by time, whatever the length of the text.
+const AHEAD: Duration = Duration::from_secs(2);
+
+/// How often a waiting reader asks the device how much it still holds. The queue's only poll, confined
+/// to [`SpeechQueue::start_settle`]: an event from the sink can replace it there alone.
 const DRAIN: Duration = Duration::from_millis(20);
 
 /// Where the queue stands: speaking while the service sends audio, draining while the device plays the
@@ -48,6 +56,8 @@ pub struct Halted {
 pub enum SpeakError {
     #[error("text is empty")]
     Empty,
+    #[error("text is too long: {0} characters, at most {limit}", limit = TEXT)]
+    TooLong(usize),
     #[error("speech queue is full: {} requests already waiting", BACKLOG)]
     Full,
     #[error("speech queue stopped")]
@@ -137,7 +147,7 @@ impl SpeechQueue {
             Streamed::Done(result) => {
                 audio.finish();
                 state.send_replace(SpeechState::Draining { id });
-                let stop = Self::start_drain(audio, controls).await;
+                let stop = Self::start_settle(audio, controls, Duration::ZERO).await;
                 let outcome = stop.as_ref().map_or(Outcome::Done, |_| Outcome::Cancelled);
                 (result.map(|()| outcome), stop.map(|reply| (reply, None)))
             }
@@ -181,6 +191,9 @@ impl SpeechQueue {
             Err(error) => return Streamed::Done(Err(SpeakError::Speech(error))),
         };
         let reply = loop {
+            if let Some(reply) = Self::start_settle(audio, controls, AHEAD).await {
+                break reply;
+            }
             tokio::select! {
                 biased;
                 Some(Control::Stop(reply)) = controls.recv() => break reply,
@@ -194,13 +207,14 @@ impl SpeechQueue {
         Streamed::Stopped(reply, Some(utterance))
     }
 
-    /// Draining's single exit: returns once the device has nothing left to play, or with the stop that
-    /// cut it short.
-    async fn start_drain(
+    /// Waits until the device holds at most `below` of audio, or returns the stop that came first.
+    /// Backpressure (`below` = [`AHEAD`]) and Draining's single exit (`below` = zero) share it.
+    async fn start_settle(
         audio: &AudioThread,
         controls: &mut mpsc::Receiver<Control>,
+        below: Duration,
     ) -> Option<oneshot::Sender<Halted>> {
-        while audio.pending().await > 0.0 {
+        while audio.pending().await > below.as_secs_f64() {
             tokio::select! {
                 biased;
                 Some(Control::Stop(reply)) = controls.recv() => return Some(reply),
@@ -267,12 +281,14 @@ impl SpeechQueue {
     /// future after that does not stop the speech.
     ///
     /// # Errors
-    /// Empty text, a full queue, a stopped queue, a device that cannot open, or the speech service
-    /// failing.
+    /// Empty text, a text over [`TEXT`] characters, a full queue, a stopped queue, a device that cannot
+    /// open, or the speech service failing.
     pub async fn say(&self, request: SpeechRequest) -> Result<(u64, Outcome), SpeakError> {
         (!request.text.trim().is_empty())
             .then_some(())
             .ok_or(SpeakError::Empty)?;
+        let length = request.text.chars().count();
+        (length <= TEXT).then_some(()).ok_or(SpeakError::TooLong(length))?;
         let (done, spoken) = oneshot::channel();
         self.jobs.try_send(Job { request, done }).map_err(|error| match error {
             TrySendError::Full(_) => SpeakError::Full,

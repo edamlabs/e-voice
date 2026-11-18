@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::cast_precision_loss)]
 
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
@@ -42,9 +42,19 @@ pub struct FakePlayback {
     tail_polls: u32,
     fail_pushes: bool,
     dropped: Arc<AtomicBool>,
+    realtime: bool,
+    ledger: Mutex<(f64, Instant)>,
+    received: Arc<Mutex<Vec<f32>>>,
+    max_pending: Arc<Mutex<f64>>,
 }
 
 impl FakePlayback {
+    /// Seconds of audio a device playing in real time still holds.
+    fn left(&self) -> f64 {
+        let (value, at) = *self.ledger.lock().unwrap();
+        (value - at.elapsed().as_secs_f64()).max(0.0)
+    }
+
     fn record(&self, event: Ev) {
         self.log.lock().unwrap().push(event.clone());
         self.stamps.lock().unwrap().push((Instant::now(), event));
@@ -61,6 +71,13 @@ impl Playback for FakePlayback {
         if self.fail_pushes {
             return Err(DeviceError::Output);
         }
+        self.received.lock().unwrap().extend_from_slice(samples);
+        if self.realtime {
+            let held = self.left() + samples.len() as f64 / f64::from(rate.get());
+            *self.ledger.lock().unwrap() = (held, Instant::now());
+            let mut max = self.max_pending.lock().unwrap();
+            *max = max.max(held);
+        }
         *self.polls.lock().unwrap() = self.drain_polls;
         Ok(())
     }
@@ -73,10 +90,16 @@ impl Playback for FakePlayback {
 
     fn clear(&self) {
         *self.polls.lock().unwrap() = 0;
+        *self.ledger.lock().unwrap() = (0.0, Instant::now());
         self.record(Ev::Clear);
     }
 
     fn pending(&self) -> f64 {
+        if self.realtime {
+            let left = self.left();
+            self.record(if left > 0.0 { Ev::Playing } else { Ev::Silent });
+            return left;
+        }
         let mut polls = self.polls.lock().unwrap();
         if *polls > 0 {
             *polls -= 1;
@@ -106,6 +129,9 @@ pub struct Device {
     fail_first: usize,
     pub tail_polls: u32,
     pub fail_pushes: bool,
+    pub realtime: bool,
+    pub received: Arc<Mutex<Vec<f32>>>,
+    pub max_pending: Arc<Mutex<f64>>,
 }
 
 impl Device {
@@ -120,6 +146,9 @@ impl Device {
             fail_first,
             tail_polls: 0,
             fail_pushes: false,
+            realtime: false,
+            received: Arc::default(),
+            max_pending: Arc::default(),
         }
     }
 
@@ -131,6 +160,8 @@ impl Device {
             Arc::clone(&self.opens),
             Arc::clone(&self.dropped),
         );
+        let (realtime, received, max_pending) =
+            (self.realtime, Arc::clone(&self.received), Arc::clone(&self.max_pending));
         let (drain_polls, fail_first, tail_polls, fail_pushes) =
             (self.drain_polls, self.fail_first, self.tail_polls, self.fail_pushes);
         move || {
@@ -147,6 +178,10 @@ impl Device {
                     tail_polls,
                     fail_pushes,
                     dropped: Arc::clone(&dropped),
+                    realtime,
+                    ledger: Mutex::new((0.0, Instant::now())),
+                    received: Arc::clone(&received),
+                    max_pending: Arc::clone(&max_pending),
                 })
                 .ok_or(DeviceError::Output)
         }
@@ -305,4 +340,19 @@ pub async fn cleared(device: &Device) -> bool {
         tokio::time::sleep(Duration::from_millis(2)).await;
     }
     false
+}
+
+/// `frames` frames of `len` samples each, produced at once; sample k of the utterance holds the value k, so a sink
+/// can check it got every one exactly once, in order.
+pub fn counting(frames: usize, len: usize) -> FakeSpeech {
+    FakeSpeech::new(move |_| {
+        (0..frames)
+            .map(|frame| {
+                Ok(Frame {
+                    rate: rate(),
+                    samples: (0..len).map(|at| (frame * len + at) as f32).collect(),
+                })
+            })
+            .collect()
+    })
 }

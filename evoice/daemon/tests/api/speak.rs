@@ -29,8 +29,14 @@ async fn test_speak_answers_done_with_an_id_once_the_device_has_played() {
     let took = started.elapsed();
     assert_eq!(status, 200);
     assert_eq!(body, r#"{"id":0,"outcome":"done"}"#);
-    assert!(took >= Duration::from_millis(40), "{took:?}");
-    assert_eq!(events(&device.log).last(), Some(&Ev::Silent));
+    let log = events(&device.log);
+    let last_push = log.iter().rposition(|event| matches!(event, Ev::Push { .. })).unwrap();
+    assert!(took >= Duration::from_millis(20), "{took:?}");
+    assert!(
+        log[last_push..].contains(&Ev::Playing),
+        "the device was already empty when the say resolved: {log:?}"
+    );
+    assert_eq!(log.last(), Some(&Ev::Silent));
     let (_, second) = daemon.speak(r#"{"text":"5"}"#).await;
     assert_eq!(second, r#"{"id":1,"outcome":"done"}"#);
     daemon.stop().await;
@@ -106,7 +112,11 @@ async fn test_speak_maps_a_failure_midway_to_502_and_the_audio_before_it_still_p
     assert_eq!(status, 502);
     assert_eq!(json(&body)["error"], "speech service: cut");
     let log = events(&device.log);
-    assert!(matches!(log[0], Ev::Push { first, .. } if same(first, 8.0)), "{log:?}");
+    let first_push = log.iter().find(|event| matches!(event, Ev::Push { .. }));
+    assert!(
+        matches!(first_push, Some(Ev::Push { first, .. }) if same(*first, 8.0)),
+        "{log:?}"
+    );
     assert_eq!(log.last(), Some(&Ev::Silent));
 }
 
@@ -200,6 +210,22 @@ async fn test_a_client_that_hangs_up_once_accepted_does_not_stop_the_speech() {
     {
         assert!(Instant::now() < deadline, "the speech never played");
         tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    daemon.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_speak_refuses_a_text_over_4096_characters_with_400_and_takes_4096() {
+    let (daemon, _) = daemon(FakeSpeech::marked(), &Device::new(0, 0)).await;
+    for letter in ["a", "ñ"] {
+        let (status, body) = daemon.speak(&format!(r#"{{"text":"{}"}}"#, letter.repeat(4_096))).await;
+        assert_eq!(status, 200, "4096 × {letter}: {body}");
+        let (status, body) = daemon.speak(&format!(r#"{{"text":"{}"}}"#, letter.repeat(4_097))).await;
+        assert_eq!(status, 400, "4097 × {letter}");
+        assert_eq!(
+            body,
+            r#"{"error":"text is too long: 4097 characters, at most 4096","outcome":"failed"}"#
+        );
     }
     daemon.stop().await;
 }
