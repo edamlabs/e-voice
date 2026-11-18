@@ -20,9 +20,17 @@ pub struct Settings {
 impl Settings {
     // ##### PRIVATE #####
 
-    /// Clients find the daemon by its port, so the OS may not pick one.
-    fn validate_rules(&self) -> [(bool, &'static str, &'static str); 1] {
-        [(self.daemon.port >= 1, "daemon.port", "must be at least 1")]
+    /// Clients find the daemon by its port, so the OS may not pick one; the WebSocket client is built
+    /// without TLS, so `wss://` would only fail at the first request.
+    fn validate_rules(&self) -> [(bool, &'static str, &'static str); 2] {
+        [
+            (self.daemon.port >= 1, "daemon.port", "must be at least 1"),
+            (
+                self.daemon.tts.starts_with("ws://"),
+                "daemon.tts",
+                "must be a ws:// URL (TLS is not built in)",
+            ),
+        ]
     }
 
     // ##########################################################

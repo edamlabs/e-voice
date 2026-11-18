@@ -1,15 +1,14 @@
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
 use tokio::net::TcpListener;
 
 use crate::api::health::health;
+use crate::api::speak::speak;
+use crate::api::state::AppState;
 use crate::core::settings::Settings;
-
-/// The daemon owns the audio devices: it listens on loopback only, never on `[server] host`.
-const HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -27,24 +26,29 @@ pub enum ServerError {
 pub struct Server;
 
 impl Server {
-    pub fn router() -> Router {
-        Router::new().route("/health", get(health))
+    pub fn router(state: AppState) -> Router {
+        Router::new()
+            .route("/health", get(health))
+            .route("/speak", post(speak))
+            .with_state(state)
     }
 
-    /// Serves until `shutdown` resolves, then stops accepting and lets requests in flight finish.
+    /// Serves on `[daemon] host` (loopback by default, never `[server] host`) until `shutdown` resolves,
+    /// then stops accepting and lets requests in flight finish.
     ///
     /// # Errors
     /// The address cannot be bound, or serving fails.
     pub async fn serve(
         settings: &Settings,
+        state: AppState,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), ServerError> {
-        let address = SocketAddr::new(HOST, settings.daemon.port);
+        let address = SocketAddr::new(settings.daemon.host, settings.daemon.port);
         let listener = TcpListener::bind(address)
             .await
             .map_err(|source| ServerError::Bind { address, source })?;
         tracing::info!(%address, "server.listening");
-        axum::serve(listener, Self::router())
+        axum::serve(listener, Self::router(state))
             .with_graceful_shutdown(shutdown)
             .await
             .map_err(ServerError::Serve)

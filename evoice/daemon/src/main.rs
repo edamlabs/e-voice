@@ -5,7 +5,12 @@ use clap::{Parser, Subcommand};
 use e_voice_core::logger::{Logger, LoggerError};
 use e_voice_core::settings::SettingsError;
 use e_voice_daemon::api::server::{Server, ServerError};
+use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::core::settings::Settings;
+use e_voice_daemon::speech::tts::TtsSpeech;
+use e_voice_daemon::workflow::audio::AudioThread;
+use e_voice_daemon::workflow::queue::SpeechQueue;
+use e_voice_device::playback::cpal::CpalPlayback;
 
 #[derive(Debug, thiserror::Error)]
 enum MainError {
@@ -62,7 +67,14 @@ impl Cli {
         let settings = Settings::load(self.config.as_deref())?;
         let _logger = Logger::init(&settings.server.log)?;
         match self.command {
-            CliCommand::Serve => Server::serve(&settings, Self::run_shutdown()).await?,
+            CliCommand::Serve => {
+                let output = settings.daemon.output.clone();
+                let audio = AudioThread::spawn(move || {
+                    CpalPlayback::open(output.as_deref(), |error| tracing::error!(%error, "speaker.failed"))
+                });
+                let speech = SpeechQueue::start(TtsSpeech::new(settings.daemon.tts.clone()), audio);
+                Server::serve(&settings, AppState { speech }, Self::run_shutdown()).await?;
+            }
         }
         Ok(())
     }

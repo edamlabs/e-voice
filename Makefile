@@ -183,7 +183,7 @@ backends: sherpa  ## model-backed tests against installed models (make setup ARG
 	@cargo test --release --workspace -- --ignored $(ARGS)
 
 coverage: sherpa  ## line coverage over every test incl. model-backed ones; fails under $(COVERAGE)%
-	@cargo llvm-cov --workspace --quiet --ignore-filename-regex '(evoice/(stt|tts)/src/main\.rs|cli/)' --fail-under-lines $(COVERAGE) --summary-only -- --include-ignored
+	@cargo llvm-cov --workspace --quiet --ignore-filename-regex '(evoice/(stt|tts)/src/main\.rs|cli/|evoice/device/src/(host|capture/cpal|playback/cpal)\.rs)' --fail-under-lines $(COVERAGE) --summary-only -- --include-ignored
 
 gates:  ## every vars.* a workflow reads is declared, disabled, in .github/ci.vars.example
 	@used="$$(grep -rhoE 'vars\.[A-Z_]+' .github/workflows | sed 's/vars\.//' | sort -u)"; \

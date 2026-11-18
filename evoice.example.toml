@@ -75,7 +75,8 @@ min = "500ms"                                # shorter segments are not classifi
 
 [stt.pipeline.diarize]
 backend = "off"                              # off | sherpa   (speakers of an uploaded file; never live audio)
-embedding = "wespeaker-resnet34-lm"
+embedding = "wespeaker-resnet34-lm"          # wespeaker-resnet34-lm | campplus-zh-en | eres2net-voxceleb
+precision = "fp32"                           # fp32 | int8   (segmentation weights)
 threads = 4                                  # this node's own budget, apart from jobs
 threshold = 0.5                              # clustering distance; ignored when speakers is set
 # speakers = 9                               # fix the speaker count instead of estimating it

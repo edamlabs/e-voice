@@ -6,6 +6,10 @@
     clippy::expect_used
 )]
 
+#[path = "../fake/mod.rs"]
+mod fake;
 mod health;
 mod http;
+mod running;
 mod server;
+mod speak;

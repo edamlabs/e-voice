@@ -62,3 +62,39 @@ fn test_a_missing_explicit_file_is_refused() {
     let missing = std::env::temp_dir().join("evoiced-definitely-missing.toml");
     assert!(Settings::load(Some(&missing)).is_err());
 }
+
+#[test]
+fn test_the_defaults_name_loopback_and_the_local_tts() {
+    let daemon = Settings::default().daemon;
+    assert_eq!(daemon.host.to_string(), "127.0.0.1");
+    assert_eq!(daemon.tts, "ws://127.0.0.1:5600");
+    assert_eq!(daemon.output, None);
+}
+
+#[test]
+fn test_host_tts_and_output_are_read_from_the_daemon_table() {
+    let loaded = load(
+        "keys",
+        "[daemon]\nhost = \"0.0.0.0\"\ntts = \"ws://tts.local:5601\"\noutput = \"Speakers\"\n",
+    )
+    .unwrap();
+    assert_eq!(loaded.daemon.host.to_string(), "0.0.0.0");
+    assert_eq!(loaded.daemon.tts, "ws://tts.local:5601");
+    assert_eq!(loaded.daemon.output.as_deref(), Some("Speakers"));
+}
+
+#[test]
+fn test_a_tts_url_that_is_not_ws_is_refused_naming_the_key() {
+    for url in ["wss://tts.local", "http://tts.local", "tts.local:5600", ""] {
+        let error = load("tts", &format!("[daemon]\ntts = \"{url}\"\n")).unwrap_err();
+        assert!(
+            error.contains("daemon.tts") && error.contains("ws://"),
+            "{url}: {error}"
+        );
+    }
+}
+
+#[test]
+fn test_a_host_that_is_not_an_ip_is_refused() {
+    assert!(load("host", "[daemon]\nhost = \"localhost\"\n").is_err());
+}

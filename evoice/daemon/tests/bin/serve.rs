@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
 
-use crate::http::{free_port, request, wait_ready};
+use crate::http::{free_port, post_json, request, wait_ready};
 
 fn evoiced() -> Command {
     Command::new(env!("CARGO_BIN_EXE_evoiced"))
@@ -127,4 +127,45 @@ fn test_sigterm_stops_the_daemon_cleanly_with_exit_0() {
     let status = child.wait().unwrap();
     std::fs::remove_file(&path).ok();
     assert_eq!(status.code(), Some(0));
+}
+
+#[test]
+fn test_a_tts_url_that_is_not_ws_exits_1_naming_the_key() {
+    let path = config("wss", "[daemon]\ntts = \"wss://tts.local\"\n");
+    let output = evoiced().arg("serve").arg("--config").arg(&path).output().unwrap();
+    std::fs::remove_file(&path).ok();
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with("evoiced: ") && stderr.contains("daemon.tts"),
+        "{stderr}"
+    );
+}
+
+/// The real binary, an output device that does not exist: `/health` answers without any device, and
+/// `/speak` is a 503 naming the device, with no sound made.
+#[test]
+fn test_serve_without_an_output_device_answers_health_and_503_on_speak() {
+    let port = free_port();
+    let path = config(
+        "nodevice",
+        &format!("[daemon]\nport = {port}\noutput = \"no-such-output-xyz\"\n"),
+    );
+    let daemon = Daemon(
+        evoiced()
+            .arg("serve")
+            .arg("--config")
+            .arg(&path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_ready(port);
+    assert_eq!(request(port, "GET", "/health").0, 200);
+    let (status, body) = post_json(port, "/speak", r#"{"text":"hola"}"#);
+    drop(daemon);
+    std::fs::remove_file(&path).ok();
+    assert_eq!(status, 503);
+    assert_eq!(body, r#"{"error":"no output device","outcome":"failed"}"#);
 }

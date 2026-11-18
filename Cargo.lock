@@ -941,10 +941,15 @@ dependencies = [
  "axum",
  "clap",
  "e-voice-core",
+ "e-voice-device",
+ "futures-util",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-tungstenite 0.30.0",
  "tracing",
+ "url",
 ]
 
 [[package]]

@@ -3,15 +3,26 @@ use std::time::Duration;
 
 use e_voice_core::config::server::ServerConfig;
 use e_voice_daemon::api::server::{Server, ServerError};
+use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::config::daemon::DaemonConfig;
 use e_voice_daemon::core::settings::Settings;
 use tokio::sync::oneshot;
 
+use crate::fake::{Device, FakeSpeech, queue};
 use crate::http::{free_port, request, wait_ready};
+
+fn state() -> AppState {
+    AppState {
+        speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
+    }
+}
 
 fn on(port: u16) -> Settings {
     Settings {
-        daemon: DaemonConfig { port },
+        daemon: DaemonConfig {
+            port,
+            ..DaemonConfig::default()
+        },
         ..Settings::default()
     }
 }
@@ -20,7 +31,7 @@ fn on(port: u16) -> Settings {
 async fn test_serve_stops_cleanly_when_shutdown_fires() {
     let (stop, stopped) = oneshot::channel::<()>();
     let task = tokio::spawn(async move {
-        Server::serve(&on(0), async {
+        Server::serve(&on(0), state(), async {
             stopped.await.ok();
         })
         .await
@@ -39,7 +50,7 @@ async fn test_serve_answers_on_the_configured_port_then_stops() {
     let port = free_port();
     let (stop, stopped) = oneshot::channel::<()>();
     let task = tokio::spawn(async move {
-        Server::serve(&on(port), async {
+        Server::serve(&on(port), state(), async {
             stopped.await.ok();
         })
         .await
@@ -65,7 +76,9 @@ async fn test_serve_answers_on_the_configured_port_then_stops() {
 async fn test_serve_on_a_held_port_fails_naming_the_loopback_address() {
     let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let port = held.local_addr().unwrap().port();
-    let error = Server::serve(&on(port), std::future::pending()).await.unwrap_err();
+    let error = Server::serve(&on(port), state(), std::future::pending())
+        .await
+        .unwrap_err();
     assert!(matches!(error, ServerError::Bind { .. }), "{error:?}");
     assert!(
         error
@@ -76,7 +89,7 @@ async fn test_serve_on_a_held_port_fails_naming_the_loopback_address() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_serve_binds_loopback_even_when_the_shared_host_is_open() {
+async fn test_serve_binds_the_daemon_host_never_the_shared_one() {
     let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let port = held.local_addr().unwrap().port();
     let settings = Settings {
@@ -86,11 +99,34 @@ async fn test_serve_binds_loopback_even_when_the_shared_host_is_open() {
         },
         ..on(port)
     };
-    let error = Server::serve(&settings, std::future::pending()).await.unwrap_err();
+    let error = Server::serve(&settings, state(), std::future::pending())
+        .await
+        .unwrap_err();
     assert!(
         error
             .to_string()
             .starts_with(&format!("cannot bind 127.0.0.1:{port}: ")),
+        "{error}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_serve_binds_the_host_the_daemon_table_names() {
+    let held = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    let settings = Settings {
+        daemon: DaemonConfig {
+            host: Ipv4Addr::UNSPECIFIED.into(),
+            port,
+            ..DaemonConfig::default()
+        },
+        ..Settings::default()
+    };
+    let error = Server::serve(&settings, state(), std::future::pending())
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().starts_with(&format!("cannot bind 0.0.0.0:{port}: ")),
         "{error}"
     );
 }
