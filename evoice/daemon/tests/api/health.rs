@@ -7,6 +7,8 @@ fn state(device: &Device) -> AppState {
     AppState {
         speech: queue(FakeSpeech::marked(), device),
         listen: crate::fake::idle(),
+        events: crate::fake::bus(),
+        subscribers: crate::fake::pool(),
     }
 }
 

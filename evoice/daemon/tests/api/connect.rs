@@ -47,8 +47,10 @@ async fn test_a_service_that_never_answers_the_handshake_is_a_502_within_the_bou
     let url = stalling_then_working().await;
     let device = Device::new(0, 0);
     let state = AppState {
-        speech: SpeechQueue::start(TtsSpeech::new(url), device.thread()),
+        speech: SpeechQueue::start(TtsSpeech::new(url), device.thread(), crate::fake::bus()),
         listen: crate::fake::idle(),
+        events: crate::fake::bus(),
+        subscribers: crate::fake::pool(),
     };
     let daemon = Running::start(state).await;
     let started = Instant::now();
@@ -98,8 +100,14 @@ async fn test_a_service_announcing_an_absurd_rate_is_a_502_naming_it_and_the_dae
     for rate in [4_294_967_295u64, 384_001, 0] {
         let device = Device::new(0, 0);
         let state = AppState {
-            speech: SpeechQueue::start(TtsSpeech::new(announcing(rate).await), device.thread()),
+            speech: SpeechQueue::start(
+                TtsSpeech::new(announcing(rate).await),
+                device.thread(),
+                crate::fake::bus(),
+            ),
             listen: crate::fake::idle(),
+            events: crate::fake::bus(),
+            subscribers: crate::fake::pool(),
         };
         let daemon = Running::start(state).await;
         let (status, body) = daemon.speak(r#"{"text":"hola"}"#).await;

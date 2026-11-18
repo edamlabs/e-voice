@@ -1,8 +1,9 @@
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
+use e_voice_daemon::schema::event::SpeechState;
 use e_voice_daemon::speech::base::SpeechError;
-use e_voice_daemon::workflow::queue::{Halted, Outcome, SpeakError, SpeechQueue, SpeechState};
+use e_voice_daemon::workflow::queue::{Halted, Outcome, SpeakError, SpeechQueue};
 
 use crate::fake::{Device, Ev, FakeSpeech, cleared, events, long, queue, say};
 

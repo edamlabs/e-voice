@@ -2,8 +2,9 @@ use std::time::{Duration, Instant};
 
 use e_voice_core::schema::lang::Lang;
 use e_voice_daemon::api::state::AppState;
+use e_voice_daemon::schema::event::SpeechState;
 use e_voice_daemon::speech::base::SpeechError;
-use e_voice_daemon::workflow::queue::{BACKLOG, SpeechState};
+use e_voice_daemon::workflow::queue::BACKLOG;
 use serde_json::Value;
 
 use crate::fake::{Device, Ev, FakeSpeech, events, frame, queue, same, say};
@@ -17,6 +18,8 @@ async fn daemon(speech: FakeSpeech, device: &Device) -> (Running, AppState) {
     let state = AppState {
         speech: queue(speech, device),
         listen: crate::fake::idle(),
+        events: crate::fake::bus(),
+        subscribers: crate::fake::pool(),
     };
     (Running::start(state.clone()).await, state)
 }

@@ -2,8 +2,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use e_voice_core::schema::lang::Lang;
+use e_voice_daemon::schema::event::SpeechState;
 use e_voice_daemon::speech::base::SpeechError;
-use e_voice_daemon::workflow::queue::{BACKLOG, Outcome, SpeakError, SpeechQueue, SpeechState};
+use e_voice_daemon::workflow::queue::{BACKLOG, Outcome, SpeakError, SpeechQueue};
 use e_voice_device::error::DeviceError;
 use tokio::sync::mpsc;
 

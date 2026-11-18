@@ -950,6 +950,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.30.0",
  "tracing",
+ "tungstenite 0.29.0",
  "url",
 ]
 

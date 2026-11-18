@@ -5,6 +5,7 @@ use axum::Router;
 use axum::routing::{get, post};
 use tokio::net::TcpListener;
 
+use crate::api::events::events;
 use crate::api::health::health;
 use crate::api::listen::listen;
 use crate::api::speak::speak;
@@ -34,6 +35,7 @@ impl Server {
             .route("/speak", post(speak))
             .route("/listen", post(listen))
             .route("/stop", post(stop))
+            .route("/events", get(events))
             .with_state(state)
     }
 

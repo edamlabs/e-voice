@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use e_voice_core::schema::emotion::Emotion;
 use e_voice_core::schema::lang::Lang;
 use e_voice_daemon::hearing::base::{Heard, Hearing, HearingError, Recognized, Transcription};
+use e_voice_daemon::schema::event::DaemonEvent;
 use e_voice_daemon::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
 use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::{CaptureThread, Deliver};
@@ -19,7 +20,7 @@ use e_voice_device::capture::base::Capture;
 use e_voice_device::error::DeviceError;
 use e_voice_device::playback::base::Playback;
 use futures_util::future::BoxFuture;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, broadcast, mpsc};
 
 /// What the fake device saw, in order.
 #[derive(Debug, Clone, PartialEq)]
@@ -316,7 +317,7 @@ impl Speech for FakeSpeech {
 }
 
 pub fn queue(speech: FakeSpeech, device: &Device) -> SpeechQueue {
-    SpeechQueue::start(speech, device.thread())
+    SpeechQueue::start(speech, device.thread(), bus())
 }
 
 pub fn say(text: &str) -> SpeechRequest {
@@ -620,4 +621,51 @@ impl Mic {
         }
         false
     }
+}
+
+/// The daemon's event bus, as the composition root makes it.
+pub fn bus() -> broadcast::Sender<DaemonEvent> {
+    broadcast::channel(e_voice_daemon::api::events::EVENTS).0
+}
+
+/// The subscriber permits, as the composition root makes them.
+pub fn pool() -> Arc<Semaphore> {
+    Arc::new(Semaphore::new(e_voice_daemon::api::events::SUBSCRIBERS))
+}
+
+/// Everything a daemon is made of, wired as the composition root wires it: one bus, one queue, one listener.
+pub struct Wired {
+    pub state: e_voice_daemon::api::state::AppState,
+    pub events: broadcast::Sender<DaemonEvent>,
+    pub device: Device,
+    pub hearing: FakeHearing,
+    pub mic: Mic,
+}
+
+pub fn wired(speech: FakeSpeech, device: Device, listen: Duration) -> Wired {
+    let events = bus();
+    let (hearing, mic) = (FakeHearing::default(), Mic::default());
+    let state = e_voice_daemon::api::state::AppState {
+        speech: SpeechQueue::start(speech, device.thread(), events.clone()),
+        listen: Arc::new(e_voice_daemon::workflow::listen::Listener::new(
+            hearing.clone(),
+            mic.thread(),
+            listen,
+            events.clone(),
+        )),
+        events: events.clone(),
+        subscribers: pool(),
+    };
+    Wired {
+        state,
+        events,
+        device,
+        hearing,
+        mic,
+    }
+}
+
+/// Every event already on the receiver, in order.
+pub fn drained(receiver: &mut broadcast::Receiver<DaemonEvent>) -> Vec<DaemonEvent> {
+    std::iter::from_fn(|| receiver.try_recv().ok()).collect()
 }

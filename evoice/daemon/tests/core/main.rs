@@ -6,4 +6,5 @@
     clippy::expect_used
 )]
 
+mod event;
 mod settings;

@@ -3,10 +3,11 @@ use std::time::Duration;
 
 use e_voice_device::error::DeviceError;
 use futures_util::future::BoxFuture;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 use tokio::time::Instant;
 
 use crate::hearing::base::{Heard, Hearing, HearingError, Recognized, Transcription};
+use crate::schema::event::{DaemonEvent, ListenState};
 use crate::workflow::capture::{CaptureThread, Microphone};
 
 /// The longest a listen may wait for someone to start speaking. A listen holds the only microphone and
@@ -48,6 +49,27 @@ enum Phase {
     Speaking(Instant),
 }
 
+/// One accepted listen on the daemon's events: `open` when it is made, `closed` when it drops, so a listen
+/// its caller stopped waiting for still closes.
+struct ListenTurn<'a> {
+    events: &'a broadcast::Sender<DaemonEvent>,
+}
+
+impl<'a> ListenTurn<'a> {
+    fn new(events: &'a broadcast::Sender<DaemonEvent>) -> Self {
+        let state = ListenState::Open;
+        events.send(DaemonEvent::Listening { state }).ok();
+        Self { events }
+    }
+}
+
+impl Drop for ListenTurn<'_> {
+    fn drop(&mut self) {
+        let state = ListenState::Closed;
+        self.events.send(DaemonEvent::Listening { state }).ok();
+    }
+}
+
 /// Opens the microphone and a recognizer session for one listen, and returns the first segment heard in
 /// full: a final with text and no error. One listen at a time; the microphone and the session close
 /// when it ends, and when its caller stops waiting.
@@ -56,6 +78,7 @@ pub struct Listener<H> {
     capture: CaptureThread,
     timeout: Duration,
     turn: Mutex<()>,
+    events: broadcast::Sender<DaemonEvent>,
 }
 
 impl<H> Debug for Listener<H> {
@@ -69,11 +92,17 @@ impl<H> Debug for Listener<H> {
 impl<H: Hearing> Listener<H> {
     // ##### PRIVATE #####
 
+    /// `heard` goes out before the turn closes, so a subscriber sees it inside its listen.
     async fn listen_turn(&self, timeout: Duration) -> Result<Heard, ListenError> {
+        let _turn = ListenTurn::new(&self.events);
         let mut microphone = self.capture.open().await.map_err(ListenError::Device)?;
         let rate = microphone.rate;
         let mut transcription = self.hearing.open(rate).await.map_err(ListenError::Hearing)?;
-        let heard = Self::listen_until(&mut microphone, &mut transcription, timeout).await;
+        let until = Self::listen_until(&mut microphone, &mut transcription, timeout, &self.events);
+        let heard = until.await;
+        if let Ok(heard) = &heard {
+            self.events.send(DaemonEvent::Heard(heard.clone())).ok();
+        }
         let dropped = microphone.dropped();
         if dropped > 0 {
             tracing::warn!(dropped, "microphone.dropped");
@@ -90,6 +119,7 @@ impl<H: Hearing> Listener<H> {
         microphone: &mut Microphone,
         transcription: &mut H::Transcription,
         timeout: Duration,
+        events: &broadcast::Sender<DaemonEvent>,
     ) -> Result<Heard, ListenError> {
         let now = Instant::now();
         let waiting = now.checked_add(timeout).ok_or(ListenError::Invalid(timeout))?;
@@ -117,7 +147,9 @@ impl<H: Hearing> Listener<H> {
                         }
                         phase = Phase::Waiting;
                     }
-                    Some(Ok(Recognized::Partial(_))) => {}
+                    Some(Ok(Recognized::Partial(text))) => {
+                        events.send(DaemonEvent::Partial { text }).ok();
+                    }
                     Some(Err(error)) => return Err(ListenError::Hearing(error)),
                     None => {
                         let closed = HearingError::Server("closed the session before a final".to_owned());
@@ -140,14 +172,16 @@ impl<H: Hearing> Listener<H> {
 
     // ##### PUBLIC #####
 
-    /// `timeout` is the default wait for speech, for a listen that names none.
+    /// `timeout` is the default wait for speech, for a listen that names none; every listen it accepts is
+    /// announced on `events`.
     #[must_use]
-    pub fn new(hearing: H, capture: CaptureThread, timeout: Duration) -> Self {
+    pub fn new(hearing: H, capture: CaptureThread, timeout: Duration, events: broadcast::Sender<DaemonEvent>) -> Self {
         Self {
             hearing,
             capture,
             timeout,
             turn: Mutex::new(()),
+            events,
         }
     }
 }

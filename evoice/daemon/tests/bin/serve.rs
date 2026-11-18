@@ -259,3 +259,45 @@ fn test_serve_with_a_named_missing_output_is_a_503_failed_and_exits_0_on_sigterm
         "{body}"
     );
 }
+
+/// A supervisor's SIGTERM must stop the daemon whatever clients hold open: a subscriber on `/events` is a
+/// connection that never ends by itself.
+#[test]
+fn test_sigterm_with_an_open_events_subscriber_exits_0_within_ten_seconds() {
+    let port = free_port();
+    let path = config("subscribed", &format!("[daemon]\nport = {port}\n"));
+    let mut daemon = Daemon(
+        evoiced()
+            .arg("serve")
+            .arg("--config")
+            .arg(&path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_ready(port);
+    let key = format!("{}==", "A".repeat(22));
+    let mut socket = std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).unwrap();
+    std::io::Write::write_all(
+        &mut socket,
+        format!(
+            "GET /events HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+             Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        )
+        .as_bytes(),
+    )
+    .unwrap();
+    let mut head = [0u8; 12];
+    socket.read_exact(&mut head).unwrap();
+    assert!(head.starts_with(b"HTTP/1.1 101"), "{}", String::from_utf8_lossy(&head));
+    let started = Instant::now();
+    let code = daemon.stop();
+    std::fs::remove_file(&path).ok();
+    assert_eq!(
+        code,
+        Some(0),
+        "the daemon did not stop on SIGTERM with a subscriber attached"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+}

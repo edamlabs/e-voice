@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use e_voice_daemon::api::state::AppState;
-use e_voice_daemon::workflow::queue::SpeechState;
+use e_voice_daemon::schema::event::SpeechState;
 
 use crate::fake::{Device, Ev, FakeSpeech, cleared, events, long, queue};
 use crate::running::Running;
@@ -10,6 +10,8 @@ async fn daemon(speech: FakeSpeech, device: &Device) -> (Running, AppState) {
     let state = AppState {
         speech: queue(speech, device),
         listen: crate::fake::idle(),
+        events: crate::fake::bus(),
+        subscribers: crate::fake::pool(),
     };
     (Running::start(state.clone()).await, state)
 }

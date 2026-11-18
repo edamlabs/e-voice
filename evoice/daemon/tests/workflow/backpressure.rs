@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
-use e_voice_daemon::workflow::queue::{Halted, Outcome, SpeakError, SpeechState, TEXT};
+use e_voice_daemon::schema::event::SpeechState;
+use e_voice_daemon::workflow::queue::{Halted, Outcome, SpeakError, TEXT};
 
 use crate::fake::{Device, Ev, counting, events, queue, say};
 

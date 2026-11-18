@@ -17,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 e-voice-core = { path = "../core", default-features = false }
 e-voice-device = { path = "../device" }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = "0.3.34"
 humantime-serde = "1.1.1"
@@ -27,6 +27,10 @@ thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
 tokio-tungstenite = "0.30.0"
 tracing = "0.1.44"
+### axum's own tungstenite, only for its error type: an oversized message on /events closes with 1009, not as
+### a hang-up. It must stay the version axum resolves to (Renovate bumps them apart); if they drift the
+### downcast misses and the over-cap /events test goes red. The client sockets use tokio-tungstenite above.
+tungstenite = "0.29.0"
 url = "2.5.8"
 
 [dev-dependencies]

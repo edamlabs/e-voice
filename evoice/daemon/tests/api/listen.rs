@@ -23,15 +23,25 @@ async fn with(listen: FakeListen) -> (Running, Arc<std::sync::Mutex<Vec<Option<D
     let state = AppState {
         speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
         listen: Arc::new(listen),
+        events: crate::fake::bus(),
+        subscribers: crate::fake::pool(),
     };
     (Running::start(state).await, calls)
 }
 
 async fn real() -> (Running, FakeHearing, Mic) {
     let (hearing, mic) = (FakeHearing::default(), Mic::default());
+    let events = crate::fake::bus();
     let state = AppState {
         speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
-        listen: Arc::new(Listener::new(hearing.clone(), mic.thread(), Duration::from_millis(300))),
+        listen: Arc::new(Listener::new(
+            hearing.clone(),
+            mic.thread(),
+            Duration::from_millis(300),
+            events.clone(),
+        )),
+        events,
+        subscribers: crate::fake::pool(),
     };
     (Running::start(state).await, hearing, mic)
 }

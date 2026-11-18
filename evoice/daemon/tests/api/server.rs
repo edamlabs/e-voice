@@ -15,6 +15,8 @@ fn state() -> AppState {
     AppState {
         speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
         listen: crate::fake::idle(),
+        events: crate::fake::bus(),
+        subscribers: crate::fake::pool(),
     }
 }
 

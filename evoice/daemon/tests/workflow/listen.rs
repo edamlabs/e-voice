@@ -12,7 +12,12 @@ const DEFAULT: Duration = Duration::from_millis(150);
 
 fn rig() -> (Arc<Listener<FakeHearing>>, FakeHearing, Mic) {
     let (hearing, mic) = (FakeHearing::default(), Mic::default());
-    let listener = Arc::new(Listener::new(hearing.clone(), mic.thread(), DEFAULT));
+    let listener = Arc::new(Listener::new(
+        hearing.clone(),
+        mic.thread(),
+        DEFAULT,
+        crate::fake::bus(),
+    ));
     (listener, hearing, mic)
 }
 

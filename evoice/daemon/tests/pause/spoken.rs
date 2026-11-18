@@ -14,7 +14,12 @@ type Task = JoinHandle<Result<Heard, ListenError>>;
 async fn start(timeout: Duration) -> (Task, Feed, Mic) {
     let (hearing, mic) = (FakeHearing::default(), Mic::default());
     let feed = hearing.session();
-    let listener = Arc::new(Listener::new(hearing, mic.thread(), Duration::from_secs(15)));
+    let listener = Arc::new(Listener::new(
+        hearing,
+        mic.thread(),
+        Duration::from_secs(15),
+        crate::fake::bus(),
+    ));
     let task = tokio::spawn(async move { listener.listen(Some(timeout)).await });
     while !mic.is_open() {
         tokio::task::yield_now().await;

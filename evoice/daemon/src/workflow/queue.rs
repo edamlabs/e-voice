@@ -4,8 +4,9 @@ use std::time::Duration;
 use e_voice_device::error::DeviceError;
 use serde::Serialize;
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
+use crate::schema::event::{DaemonEvent, SpeechState};
 use crate::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
 use crate::workflow::audio::AudioThread;
 
@@ -26,16 +27,6 @@ const AHEAD: Duration = Duration::from_secs(2);
 /// How often a waiting reader asks the device how much it still holds. The queue's only poll, confined
 /// to [`SpeechQueue::start_settle`]: an event from the sink can replace it there alone.
 const DRAIN: Duration = Duration::from_millis(20);
-
-/// Where the queue stands: speaking while the service sends audio, draining while the device plays the
-/// rest of it, cancelling while a stop silences both.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpeechState {
-    Idle,
-    Speaking { id: u64 },
-    Draining { id: u64 },
-    Cancelling { id: u64 },
-}
 
 /// How a text that was accepted ended: played to its last sample, or cut short by a stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -77,6 +68,21 @@ enum Control {
     Stop(oneshot::Sender<Halted>),
 }
 
+/// The queue's state, watched by its handles and announced on the daemon's events: one place moves it, so
+/// no transition is ever seen by one and missed by the other.
+struct SpeechStatus {
+    state: watch::Sender<SpeechState>,
+    events: broadcast::Sender<DaemonEvent>,
+}
+
+impl SpeechStatus {
+    /// A send with no subscriber is not a failure: nobody listening is the common case.
+    fn set(&self, next: SpeechState) {
+        self.state.send_replace(next);
+        self.events.send(DaemonEvent::Speech(next)).ok();
+    }
+}
+
 /// How the service's part of a text ended: every frame read (or a failure), or a stop, with the
 /// utterance when it was already open.
 enum Streamed<U> {
@@ -112,7 +118,7 @@ impl SpeechQueue {
         audio: AudioThread,
         mut jobs: mpsc::Receiver<Job>,
         mut controls: mpsc::Receiver<Control>,
-        state: watch::Sender<SpeechState>,
+        status: SpeechStatus,
     ) {
         let mut next = 0u64;
         loop {
@@ -123,7 +129,7 @@ impl SpeechQueue {
                 }
                 job = jobs.recv() => match job {
                     Some(job) => {
-                        next = Self::start_job(&speech, &audio, job, next, &mut jobs, &mut controls, &state).await;
+                        next = Self::start_job(&speech, &audio, job, next, &mut jobs, &mut controls, &status).await;
                     }
                     None => return,
                 },
@@ -139,14 +145,14 @@ impl SpeechQueue {
         id: u64,
         jobs: &mut mpsc::Receiver<Job>,
         controls: &mut mpsc::Receiver<Control>,
-        state: &watch::Sender<SpeechState>,
+        status: &SpeechStatus,
     ) -> u64 {
         let Job { request, done } = job;
-        state.send_replace(SpeechState::Speaking { id });
+        status.set(SpeechState::Speaking { id });
         let (result, stop) = match Self::start_stream(speech, audio, request, controls).await {
             Streamed::Done(result) => {
                 audio.finish();
-                state.send_replace(SpeechState::Draining { id });
+                status.set(SpeechState::Draining { id });
                 let stop = Self::start_settle(audio, controls, Duration::ZERO).await;
                 let outcome = stop.as_ref().map_or(Outcome::Done, |_| Outcome::Cancelled);
                 (result.map(|()| outcome), stop.map(|reply| (reply, None)))
@@ -156,9 +162,9 @@ impl SpeechQueue {
         done.send((id, result)).ok();
         let next = id.saturating_add(1);
         match stop {
-            Some((reply, utterance)) => Self::start_cancel(id, utterance, audio, jobs, next, reply, state).await,
+            Some((reply, utterance)) => Self::start_cancel(id, utterance, audio, jobs, next, reply, status).await,
             None => {
-                state.send_replace(SpeechState::Idle);
+                status.set(SpeechState::Idle);
                 next
             }
         }
@@ -233,9 +239,9 @@ impl SpeechQueue {
         jobs: &mut mpsc::Receiver<Job>,
         next: u64,
         reply: oneshot::Sender<Halted>,
-        state: &watch::Sender<SpeechState>,
+        status: &SpeechStatus,
     ) -> u64 {
-        state.send_replace(SpeechState::Cancelling { id });
+        status.set(SpeechState::Cancelling { id });
         if let Some(mut utterance) = utterance
             && let Err(error) = utterance.cancel().await
         {
@@ -248,7 +254,7 @@ impl SpeechQueue {
             next = next.saturating_add(1);
             dropped = dropped.saturating_add(1);
         }
-        state.send_replace(SpeechState::Idle);
+        status.set(SpeechState::Idle);
         reply
             .send(Halted {
                 stopped: Some(id),
@@ -262,13 +268,14 @@ impl SpeechQueue {
 
     // ##### PUBLIC #####
 
-    /// Starts the queue's task on the current runtime.
+    /// Starts the queue's task on the current runtime; every change of its state goes out on `events`.
     #[must_use]
-    pub fn start<S: Speech>(speech: S, audio: AudioThread) -> Self {
+    pub fn start<S: Speech>(speech: S, audio: AudioThread, events: broadcast::Sender<DaemonEvent>) -> Self {
         let (jobs, inbox) = mpsc::channel(BACKLOG);
         let (controls, orders) = mpsc::channel(CONTROLS);
         let (state, observed) = watch::channel(SpeechState::Idle);
-        tokio::spawn(Self::start_serve(speech, audio, inbox, orders, state));
+        let status = SpeechStatus { state, events };
+        tokio::spawn(Self::start_serve(speech, audio, inbox, orders, status));
         Self {
             jobs,
             controls,
