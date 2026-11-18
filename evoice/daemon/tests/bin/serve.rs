@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::http::{free_port, post_json, request, wait_ready};
 
@@ -9,10 +10,31 @@ fn evoiced() -> Command {
 
 struct Daemon(Child);
 
-impl Drop for Daemon {
-    fn drop(&mut self) {
+impl Daemon {
+    /// SIGTERM, then the exit status: a clean exit is what lets llvm-cov write the profile.
+    fn stop(&mut self) -> Option<i32> {
+        Command::new("kill")
+            .args(["-TERM", &self.0.id().to_string()])
+            .status()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if let Some(status) = self.0.try_wait().unwrap() {
+                return status.code();
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
         self.0.kill().ok();
         self.0.wait().ok();
+        None
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        if matches!(self.0.try_wait(), Ok(None)) {
+            self.stop();
+        }
     }
 }
 
@@ -63,7 +85,7 @@ fn test_port_zero_exits_1_naming_the_key() {
 fn test_serve_answers_health_on_the_port_of_the_environment_override() {
     let port = free_port();
     let path = config("env", "[daemon]\nport = 5799\n");
-    let daemon = Daemon(
+    let mut daemon = Daemon(
         evoiced()
             .arg("serve")
             .arg("--config")
@@ -76,8 +98,9 @@ fn test_serve_answers_health_on_the_port_of_the_environment_override() {
     );
     wait_ready(port);
     let (status, body) = request(port, "GET", "/health");
-    drop(daemon);
+    let code = daemon.stop();
     std::fs::remove_file(&path).ok();
+    assert_eq!(code, Some(0));
     assert_eq!(status, 200);
     assert!(body.contains(r#""status":"ok""#), "{body}");
 }
@@ -151,7 +174,7 @@ fn test_serve_without_an_output_device_answers_health_and_503_on_speak() {
         "nodevice",
         &format!("[daemon]\nport = {port}\noutput = \"no-such-output-xyz\"\n"),
     );
-    let daemon = Daemon(
+    let mut daemon = Daemon(
         evoiced()
             .arg("serve")
             .arg("--config")
@@ -164,8 +187,75 @@ fn test_serve_without_an_output_device_answers_health_and_503_on_speak() {
     wait_ready(port);
     assert_eq!(request(port, "GET", "/health").0, 200);
     let (status, body) = post_json(port, "/speak", r#"{"text":"hola"}"#);
-    drop(daemon);
+    let code = daemon.stop();
     std::fs::remove_file(&path).ok();
+    assert_eq!(code, Some(0));
     assert_eq!(status, 503);
     assert_eq!(body, r#"{"error":"no output device","outcome":"failed"}"#);
+}
+
+/// The real binary, an input device that does not exist: `/health` answers, `/listen` is a 503 naming
+/// the device before any recognizer is contacted, and the microphone is tried again on the next call.
+#[test]
+fn test_serve_without_an_input_device_answers_health_and_503_on_listen() {
+    let port = free_port();
+    let path = config(
+        "noinput",
+        &format!("[daemon]\nport = {port}\ninput = \"no-such-device-evoice-test\"\n"),
+    );
+    let mut daemon = Daemon(
+        evoiced()
+            .arg("serve")
+            .arg("--config")
+            .arg(&path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_ready(port);
+    assert_eq!(request(port, "GET", "/health").0, 200);
+    let first = post_json(port, "/listen", "{}");
+    let second = post_json(port, "/listen", r#"{"timeout":"1s"}"#);
+    let code = daemon.stop();
+    std::fs::remove_file(&path).ok();
+    assert_eq!(code, Some(0));
+    for (status, body) in [first, second] {
+        assert_eq!(status, 503, "{body}");
+        assert_eq!(
+            body,
+            r#"{"error":"no input device matching \"no-such-device-evoice-test\""}"#
+        );
+    }
+}
+
+/// The `/speak` twin with the name the daemon's maintainers use: the device name is not echoed, the
+/// outcome is `failed`.
+#[test]
+fn test_serve_with_a_named_missing_output_is_a_503_failed_and_exits_0_on_sigterm() {
+    let port = free_port();
+    let path = config(
+        "namedout",
+        &format!("[daemon]\nport = {port}\noutput = \"no-such-device-evoice-test\"\n"),
+    );
+    let mut daemon = Daemon(
+        evoiced()
+            .arg("serve")
+            .arg("--config")
+            .arg(&path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_ready(port);
+    let (status, body) = post_json(port, "/speak", r#"{"text":"x"}"#);
+    let code = daemon.stop();
+    std::fs::remove_file(&path).ok();
+    assert_eq!(code, Some(0));
+    assert_eq!(status, 503, "{body}");
+    assert!(
+        body.contains(r#""outcome":"failed""#) && body.contains(r#""error":""#),
+        "{body}"
+    );
 }

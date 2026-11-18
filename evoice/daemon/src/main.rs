@@ -16,6 +16,7 @@ use e_voice_daemon::workflow::listen::Listener;
 use e_voice_daemon::workflow::queue::SpeechQueue;
 use e_voice_device::capture::cpal::CpalCapture;
 use e_voice_device::playback::cpal::CpalPlayback;
+use tokio::signal::unix::{Signal, SignalKind, signal};
 
 #[derive(Debug, thiserror::Error)]
 enum MainError {
@@ -25,6 +26,8 @@ enum MainError {
     Logger(#[from] LoggerError),
     #[error(transparent)]
     Server(#[from] ServerError),
+    #[error("cannot install the SIGTERM handler: {0}")]
+    Signal(std::io::Error),
 }
 
 #[derive(Debug, Subcommand)]
@@ -47,19 +50,12 @@ struct Cli {
 impl Cli {
     // ##### PRIVATE #####
 
-    /// Resolves on SIGINT or SIGTERM.
-    async fn run_shutdown() {
-        let interrupt = tokio::signal::ctrl_c();
-        let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).ok();
-        let term = async move {
-            match terminate.as_mut() {
-                Some(signal) => signal.recv().await,
-                None => std::future::pending().await,
-            }
-        };
+    /// Resolves on SIGINT or on `terminate`, the SIGTERM handler installed before the daemon binds: a
+    /// daemon its supervisor cannot stop gracefully (systemd sends SIGTERM) refuses to start.
+    async fn run_shutdown(mut terminate: Signal) {
         tokio::select! {
-            _ = interrupt => {}
-            _ = term => {}
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
         }
         tracing::info!("server.stopping");
     }
@@ -73,6 +69,7 @@ impl Cli {
         let _logger = Logger::init(&settings.server.log)?;
         match self.command {
             CliCommand::Serve => {
+                let terminate = signal(SignalKind::terminate()).map_err(MainError::Signal)?;
                 let output = settings.daemon.output.clone();
                 let audio = AudioThread::spawn(move || {
                     CpalPlayback::open(output.as_deref(), |error| tracing::error!(%error, "speaker.failed"))
@@ -87,7 +84,7 @@ impl Cli {
                 });
                 let hearing = SttHearing::new(settings.daemon.stt.clone());
                 let listen = Arc::new(Listener::new(hearing, capture, settings.daemon.listen));
-                Server::serve(&settings, AppState { speech, listen }, Self::run_shutdown()).await?;
+                Server::serve(&settings, AppState { speech, listen }, Self::run_shutdown(terminate)).await?;
             }
         }
         Ok(())
