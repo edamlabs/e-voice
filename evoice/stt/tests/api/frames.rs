@@ -8,6 +8,13 @@ const AUDIO_CAP: usize = 2_097_152;
 const REALTIME_CAP: usize = 16_777_216;
 const MIB: usize = 1 << 20;
 
+/// How long a server may take to answer a message it must consume whole. Measured on a debug build: a legal 16 MiB
+/// realtime append takes 7.2 to 8.1 s to consume whether the process runs on 32 cores, on two, or on one under
+/// `nice` (it is one thread's work), so a slower runner takes longer in proportion to its core speed, not its
+/// core count. A fixed silence bound of 10 s sat just above the fast box's time; this is a total of 120 s, 15 times
+/// the measurement, and a server that is stuck still fails after it.
+const SERVICE: std::time::Duration = std::time::Duration::from_secs(120);
+
 async fn batch_server() -> String {
     app::serve(nodes(batch(0), Some(ser(0)), None), 1 << 20, false).await.0
 }
@@ -94,7 +101,7 @@ async fn test_native_exactly_at_the_cap_is_accepted_whole_or_fragmented() {
         let mut socket = RawWs::connect(&address, "/v1/stream").await;
         send(&mut socket, BINARY, &vec![0u8; AUDIO_CAP], pieces).await;
         socket.message(TEXT, br#"{"type":"end"}"#).await.unwrap();
-        let (frames, closed) = socket.until_close().await;
+        let (frames, closed) = socket.until_close_within(SERVICE).await;
         assert!(closed, "{pieces:?}: {frames:?}");
         assert_eq!(closing(&frames).0, 1000, "{pieces:?}: {frames:?}");
         assert!(kinds(&frames).contains(&"closed".to_owned()), "{frames:?}");
@@ -152,7 +159,7 @@ async fn test_deepgram_exactly_at_the_cap_is_accepted() {
         let mut socket = RawWs::connect(&address, LISTEN).await;
         send(&mut socket, BINARY, &vec![0u8; AUDIO_CAP], pieces).await;
         socket.message(TEXT, br#"{"type":"CloseStream"}"#).await.unwrap();
-        let (frames, closed) = socket.until_close().await;
+        let (frames, closed) = socket.until_close_within(SERVICE).await;
         assert!(closed, "{pieces:?}: {frames:?}");
         assert_eq!(closing(&frames).0, 1000, "{pieces:?}: {frames:?}");
     }
@@ -218,7 +225,7 @@ async fn test_realtime_exactly_at_the_cap_is_accepted() {
         let mut socket = RawWs::connect(&address, REALTIME).await;
         send(&mut socket, TEXT, &append_of(REALTIME_CAP), pieces).await;
         socket.message(TEXT, br#"{"type":"session.close"}"#).await.unwrap();
-        let (frames, closed) = socket.until_close().await;
+        let (frames, closed) = socket.until_close_within(SERVICE).await;
         assert!(closed, "{pieces:?}: {frames:?}");
         assert_eq!(closing(&frames).0, 1000, "{pieces:?}: {frames:?}");
     }

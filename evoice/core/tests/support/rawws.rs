@@ -207,12 +207,17 @@ impl RawWs {
 
     /// The next frame the server sends; `None` once it has hung up (an error counts as hanging up).
     pub async fn frame(&mut self) -> Option<Frame> {
+        self.frame_within(Duration::from_secs(10)).await
+    }
+
+    /// The next frame, waiting at most `patience` for it.
+    pub async fn frame_within(&mut self, patience: Duration) -> Option<Frame> {
         self.begin_reading();
         tokio::select! {
             biased;
             frame = self.frames.recv() => frame,
             () = async { self.ended.recv().await; } => self.frames.try_recv().ok(),
-            () = tokio::time::sleep(Duration::from_secs(10)) => None,
+            () = tokio::time::sleep(patience) => None,
         }
     }
 
@@ -241,6 +246,23 @@ impl RawWs {
         };
         buffer.drain(..header + length);
         Some(frame)
+    }
+
+    /// Every frame up to and including the first Close, giving the server `total` from now to produce it.
+    pub async fn until_close_within(&mut self, total: Duration) -> (Vec<Frame>, bool) {
+        let deadline = std::time::Instant::now() + total;
+        let mut seen = Vec::new();
+        while let Some(frame) = self
+            .frame_within(deadline.saturating_duration_since(std::time::Instant::now()))
+            .await
+        {
+            let closing = frame.opcode == CLOSE;
+            seen.push(frame);
+            if closing {
+                return (seen, true);
+            }
+        }
+        (seen, false)
     }
 
     /// Every frame up to and including the first Close, or until the server hangs up.
