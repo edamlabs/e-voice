@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::body::Bytes;
+use axum::extract::rejection::BytesRejection;
 use axum::extract::ws::{Message, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -27,12 +28,9 @@ pub struct DeepgramError {
 }
 
 impl IntoResponse for DeepgramError {
+    /// `err_code` is the status's reason phrase (`Bad Request`, `Payload Too Large`, …).
     fn into_response(self) -> Response {
-        let code = if self.status.is_client_error() {
-            "Bad Request"
-        } else {
-            "Internal Server Error"
-        };
+        let code = self.status.canonical_reason().unwrap_or_default();
         let body = json!({"err_code": code, "err_msg": self.message, "request_id": uuid::Uuid::new_v4().to_string()});
         (self.status, Json(body)).into_response()
     }
@@ -47,6 +45,10 @@ impl From<BatchError> for DeepgramError {
             },
             BatchError::Failed(message) => Self {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
+                message,
+            },
+            BatchError::TooLong(message) => Self {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
                 message,
             },
         }
@@ -291,14 +293,23 @@ impl LiveProtocol for Deepgram {
     tag = "deepgram",
     params(ListenQuery),
     request_body(content = Vec<u8>, content_type = "audio/*", description = "wav, mp3, m4a, flac, ogg, opus or webm"),
-    responses((status = 200, body = ListenResponse), (status = 400, description = "Invalid request (Deepgram error shape)"))
+    responses(
+        (status = 200, body = ListenResponse),
+        (status = 400, description = "Invalid request (Deepgram error shape)"),
+        (status = 413, description = "Over the upload or duration limit (Deepgram error shape)"),
+    )
 )]
 pub async fn prerecorded(
     State(state): State<AppState>,
     Query(query): Query<ListenQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Json<ListenResponse>, DeepgramError> {
+    // A body past `upload` answers in Deepgram's envelope, not axum's plain text.
+    let body = body.map_err(|rejection| DeepgramError {
+        status: rejection.status(),
+        message: rejection.body_text(),
+    })?;
     let (lang, emotion) = query.parse(&state)?;
     let extension = headers
         .get(axum::http::header::CONTENT_TYPE)

@@ -3,13 +3,12 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
-use e_voice_core::audio::AudioFile;
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::error::ApiError;
 use crate::api::state::AppState;
-use crate::schema::audio::Audio;
+use crate::workflow::synth::prompt::Prompt;
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct VoiceList {
@@ -19,7 +18,7 @@ pub struct VoiceList {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct VoiceCreated {
     voice_id: String,
-    /// Seconds of audio the voice was learned from.
+    /// Seconds of audio the voice was learned from: at most [`Prompt::LIMIT`], however long the clips.
     seconds: f64,
 }
 
@@ -88,11 +87,7 @@ pub async fn create(
     );
     let learned = id.clone();
     let seconds = tokio::task::spawn_blocking(move || {
-        let clips = files
-            .into_iter()
-            .map(|(bytes, extension)| AudioFile::decode(bytes, extension.as_deref(), rate).map(Audio::from))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| ApiError::Invalid(error.to_string()))?;
+        let clips = Prompt::clips(files, rate).map_err(|error| ApiError::Invalid(error.to_string()))?;
         let seconds = clips.iter().map(|clip| clip.duration(rate).as_secs_f64()).sum::<f64>();
         let voice = synth.train(&clips, text.as_deref())?;
         voices.put(&learned, &voice)?;

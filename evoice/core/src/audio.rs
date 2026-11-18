@@ -1,6 +1,7 @@
 use std::fmt::{self, Debug};
 use std::io::Cursor;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{Fft, FixedSync, Indexing, Resampler};
@@ -15,6 +16,11 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia_adapter_libopus::OpusDecoder;
 
 const CHUNK: usize = 1_024;
+
+/// The highest sample rate accepted from outside. Rates come from clients and services, and the
+/// resampler sizes its buffers from the pair before it could refuse one: an absurd rate would abort the
+/// process on allocation, so it is refused first.
+pub const MAX_RATE: u32 = 384_000;
 
 /// Little-endian mono PCM layout of incoming bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -50,6 +56,8 @@ pub enum AudioError {
     Resample(String),
     #[error("cannot decode audio: {0}")]
     Container(String),
+    #[error("audio is longer than the {} s limit", .0.as_secs())]
+    TooLong(Duration),
 }
 
 /// Byte stream of any rate and encoding → mono f32 at a target rate, fed in pieces of any size.
@@ -118,11 +126,12 @@ impl AudioIngest {
     // ##### PUBLIC #####
 
     /// # Errors
-    /// A zero rate, or a pair the resampler cannot convert between.
+    /// A zero rate, a rate above [`MAX_RATE`], or a pair the resampler cannot convert between.
     pub fn new(rate: u32, target: u32, encoding: AudioEncoding) -> Result<Self, AudioError> {
         let resampler = match (rate, target) {
             (0, _) => return Err(AudioError::Rate(rate)),
             (_, 0) => return Err(AudioError::Rate(target)),
+            _ if rate.max(target) > MAX_RATE => return Err(AudioError::Rate(rate.max(target))),
             _ if rate == target => None,
             _ => Some(
                 Fft::<f32>::new(rate as usize, target as usize, CHUNK, 1, FixedSync::Input)
@@ -305,15 +314,15 @@ impl AudioFile {
         boxes.concat()
     }
 
-    // ##########################################################
-
-    // ##### PUBLIC #####
-
-    /// CPU-bound: call from a blocking context.
-    ///
-    /// # Errors
-    /// Unknown container or codec, no audio track, a fatal decode error, or no audio at all.
-    pub fn decode(bytes: Vec<u8>, extension: Option<&str>, target: u32) -> Result<Vec<f32>, AudioError> {
+    /// The file's samples at `target`, read until they pass `cap` (then `true`, without the resampler's
+    /// tail) or until the file ends (then `false`, tail included). Peak memory is bounded by `cap`, not
+    /// by the file: a compressed-silence file stops as soon as it has said too much.
+    fn common_until(
+        bytes: Vec<u8>,
+        extension: Option<&str>,
+        target: u32,
+        cap: usize,
+    ) -> Result<(Vec<f32>, bool), AudioError> {
         let fail = |error: &dyn fmt::Display| AudioError::Container(error.to_string());
         let mut hint = Hint::new();
         if let Some(extension) = extension {
@@ -368,10 +377,51 @@ impl AudioFile {
                 None => ingest.insert(AudioIngest::new(rate, target, AudioEncoding::F32le)?),
             };
             output.extend(ingest.feed(&mono)?);
+            if output.len() > cap {
+                return Ok((output, true));
+            }
         }
         let mut ingest = ingest.ok_or_else(|| fail(&"no decodable audio"))?;
         output.extend(ingest.flush()?);
-        Ok(output)
+        let over = output.len() > cap;
+        Ok((output, over))
+    }
+
+    // ##########################################################
+
+    // ##### PUBLIC #####
+
+    /// Samples at `target` in `limit` of audio, rounded down; exact for whole seconds.
+    #[must_use]
+    pub fn cap(limit: Duration, target: u32) -> usize {
+        usize::try_from(limit.as_nanos().saturating_mul(u128::from(target)) / 1_000_000_000).unwrap_or(usize::MAX)
+    }
+
+    /// Every sample of the file at `target`; one past `limit` refuses it, and decoding stops there.
+    /// CPU-bound: call from a blocking context.
+    ///
+    /// # Errors
+    /// Unknown container or codec, no audio track, a fatal decode error, no audio at all, or audio
+    /// longer than `limit`.
+    pub fn decode(
+        bytes: Vec<u8>,
+        extension: Option<&str>,
+        target: u32,
+        limit: Duration,
+    ) -> Result<Vec<f32>, AudioError> {
+        let (samples, over) = Self::common_until(bytes, extension, target, Self::cap(limit, target))?;
+        (!over).then_some(samples).ok_or(AudioError::TooLong(limit))
+    }
+
+    /// The file's first `samples` at `target`, the same samples a whole decode starts with; decoding
+    /// stops once they are read. CPU-bound: call from a blocking context.
+    ///
+    /// # Errors
+    /// Unknown container or codec, no audio track, a fatal decode error, or no audio at all.
+    pub fn head(bytes: Vec<u8>, extension: Option<&str>, target: u32, samples: usize) -> Result<Vec<f32>, AudioError> {
+        let (mut head, _) = Self::common_until(bytes, extension, target, samples)?;
+        head.truncate(samples);
+        Ok(head)
     }
 }
 
@@ -536,7 +586,7 @@ mod tests {
         let recorded = ["recorder.webm", "recorder.m4a", "webkit.m4a"].map(str::to_owned);
         for extension in files.iter().chain(&recorded) {
             let bytes = std::fs::read(dir.join(extension)).unwrap();
-            let samples = AudioFile::decode(bytes, None, 16_000).unwrap();
+            let samples = AudioFile::decode(bytes, None, 16_000, Duration::MAX).unwrap();
             assert!(
                 (15_000..=17_500).contains(&samples.len()),
                 "{extension}: {}",
@@ -550,6 +600,6 @@ mod tests {
 
     #[test]
     fn test_file_rejects_garbage() {
-        assert!(AudioFile::decode(b"definitely not audio".to_vec(), Some("mp3"), 16_000).is_err());
+        assert!(AudioFile::decode(b"definitely not audio".to_vec(), Some("mp3"), 16_000, Duration::MAX).is_err());
     }
 }

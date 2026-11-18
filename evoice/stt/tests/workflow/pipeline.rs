@@ -164,7 +164,7 @@ async fn test_live_keeps_the_first_words_after_quiet_codec_residue() {
         eprintln!("skipped: no local sample at {}", path.display());
         return;
     };
-    let clip = e_voice_core::audio::AudioFile::decode(bytes, Some("wav"), 16_000).unwrap();
+    let clip = e_voice_core::audio::AudioFile::decode(bytes, Some("wav"), 16_000, std::time::Duration::MAX).unwrap();
     let events = transcribe(Settings::default(), clip).await;
     let onset = events
         .iter()

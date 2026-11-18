@@ -30,6 +30,7 @@ impl Lifespan {
                 .map(|engine| engine.name().to_owned())
                 .collect(),
             upload: settings.stt.api.upload.saturating_mul(1 << 20),
+            duration: settings.stt.api.duration,
             runtime,
             shutdown: CancellationToken::new(),
         })

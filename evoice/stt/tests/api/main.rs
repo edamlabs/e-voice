@@ -11,12 +11,17 @@ mod app;
 mod deepgram;
 mod diarize;
 mod docs;
+mod duration;
 mod elevenlabs;
 #[allow(dead_code)]
 #[path = "../workflow/fake.rs"]
 mod fake;
+#[allow(dead_code)]
+#[path = "../../../core/tests/support/flac.rs"]
+mod flac;
 mod health;
 mod lifespan;
+mod rate;
 mod realtime;
 mod render;
 mod stream;

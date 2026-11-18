@@ -56,7 +56,7 @@ with client.audio.speech.with_streaming_response.create(
 | Request | Does |
 |---|---|
 | `GET /v1/voices` | `{"voices": ["damien"]}` |
-| `POST /v1/voices` (multipart: `voice_id`, optional `text`, one or more `file`) | learns a voice from the clips → 201 `{"voice_id","seconds"}` |
+| `POST /v1/voices` (multipart: `voice_id`, optional `text`, one or more `file`) | learns a voice from the clips → 201 `{"voice_id","seconds"}`; `seconds` is the audio learned, at most 30 — clips are not decoded past it |
 | `DELETE /v1/voices/{voice_id}` | 204, or 404 |
 
 ```bash

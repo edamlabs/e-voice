@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::time::Duration;
 
+use e_voice_core::audio::{AudioError, AudioFile};
 use e_voice_core::schema::error::BackendError;
 use safetensors::{Dtype, SafeTensors};
 
@@ -10,7 +12,6 @@ use crate::schema::voice::VoiceState;
 
 const AUDIO: &str = "prompt";
 const TEXT: &str = "text";
-const LIMIT_S: usize = 30;
 const PAUSE_DB: f32 = 35.0;
 
 /// A voice as every backend learns it: a cleaned clip at [`Prompt::RATE`] (≤ 30 s, trailing silence
@@ -58,8 +59,34 @@ impl Prompt {
     // ##### PUBLIC #####
 
     pub const RATE: u32 = 24_000;
+    /// The most audio a voice is learned from; clips past it are ignored.
+    pub const LIMIT: Duration = Duration::from_secs(30);
     const FRAME: usize = Self::RATE as usize / 50;
     const TAIL: usize = Self::RATE as usize * 2 / 25;
+
+    /// Each clip decoded at `rate`, in order, until together they hold [`Prompt::LIMIT`]: a clip stops
+    /// at what is left, and those past it decode to nothing. Exactly the audio [`Prompt::prepare`] keeps,
+    /// without ever decoding more of it.
+    ///
+    /// # Errors
+    /// A clip that is not decodable audio.
+    pub fn clips(
+        files: impl IntoIterator<Item = (Vec<u8>, Option<String>)>,
+        rate: u32,
+    ) -> Result<Vec<Audio>, AudioError> {
+        files
+            .into_iter()
+            .try_fold(
+                (Vec::new(), AudioFile::cap(Self::LIMIT, rate)),
+                |(mut clips, left), (bytes, extension)| {
+                    let head = AudioFile::head(bytes, extension.as_deref(), rate, left)?;
+                    let left = left.saturating_sub(head.len());
+                    clips.push(Audio::from(head));
+                    Ok((clips, left))
+                },
+            )
+            .map(|(clips, _)| clips)
+    }
 
     /// Clips of one speaker at [`Prompt::RATE`], joined in order.
     ///
@@ -69,7 +96,7 @@ impl Prompt {
         let joined: Vec<f32> = clips
             .iter()
             .flat_map(|clip| clip.iter().copied())
-            .take(LIMIT_S.saturating_mul(Self::RATE as usize))
+            .take(AudioFile::cap(Self::LIMIT, Self::RATE))
             .collect();
         let audio = Self::prepare_pause(joined);
         (audio.len() > Self::TAIL).then_some(()).ok_or(TrainError::Empty)?;

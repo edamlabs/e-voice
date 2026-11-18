@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use e_voice_core::runtime::Runtime;
 use e_voice_core::schema::lang::Lang;
@@ -13,6 +14,16 @@ use tokio_util::sync::CancellationToken;
 
 /// Serves the real router over fake nodes on an ephemeral port; returns `host:port` and the shutdown token.
 pub async fn serve(nodes: Arc<Nodes>, upload: usize, tags: bool) -> (String, CancellationToken) {
+    serve_within(nodes, upload, tags, Duration::from_secs(14_400)).await
+}
+
+/// The same, with the longest decoded duration an upload may have (`[stt.api] duration`).
+pub async fn serve_within(
+    nodes: Arc<Nodes>,
+    upload: usize,
+    tags: bool,
+    duration: Duration,
+) -> (String, CancellationToken) {
     let shutdown = CancellationToken::new();
     let state = AppState {
         runner: Runner::new(nodes, PipelineConfig::default()),
@@ -20,6 +31,7 @@ pub async fn serve(nodes: Arc<Nodes>, upload: usize, tags: bool) -> (String, Can
         emotion: if tags { EmotionMode::Tag } else { EmotionMode::Field },
         models: vec!["fake-asr".to_owned()],
         upload,
+        duration,
         runtime: Runtime::probe().unwrap(),
         shutdown: shutdown.clone(),
     };

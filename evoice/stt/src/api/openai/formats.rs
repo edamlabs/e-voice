@@ -68,6 +68,10 @@ impl From<BatchError> for OpenaiError {
             BatchError::Decode(message) => Self::invalid(message, Some("file")),
             BatchError::Model(message) => Self::invalid(message, Some("model")),
             BatchError::Failed(message) => Self::server(message),
+            BatchError::TooLong(message) => Self {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                ..Self::invalid(message, Some("file"))
+            },
         }
     }
 }

@@ -52,6 +52,17 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Security
 
+- No number a client sends sizes the services' memory (TODO_VOICE-HELM_harden, in progress). Both listen on
+  `0.0.0.0` by default.
+  - Sample rate: refused above 384 kHz before any allocation. A rate of `4294967295` — in a socket's `rate`, a
+    file's header or a voice clip — reserved about 2.3 GB and aborted the process. Sockets close 1003, uploads 400.
+  - Decoded duration: `[stt.api] duration` (default `4h`) bounds what an upload decodes to, as `upload` bounds the
+    bytes received; decoding stops at the cap and every door answers 413 in its own error shape. A 7 MB FLAC of ten
+    hours of silence costs 10 MiB instead of 2.3 GB. A 61-min meeting still goes through whole (438 segments, RTF
+    0.068).
+  - Deepgram's prerecorded door answers a body past `upload` in Deepgram's error envelope, not plain text.
+  - `POST /v1/voices` stops decoding clips at 30 s in total; its `seconds` now reports the audio learned (at most
+    30), not the length uploaded. The audio the voice is learned from is sample-identical to before.
 - rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.11, tokio 1.54.1: past their
   RustSec advisories. zip stays behind (npyz needs `^0.6`, sherpa-onnx-sys builds with 2.x; the fixes land in
   9.0); e-voice never calls `ZipArchive::extract`, the affected path.

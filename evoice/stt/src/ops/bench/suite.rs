@@ -124,7 +124,8 @@ impl Suite {
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .map(str::to_owned);
-            AudioFile::decode(bytes, extension.as_deref(), RATE).map_err(|error| error.to_string())
+            // The operator's own manifest files: no duration limit.
+            AudioFile::decode(bytes, extension.as_deref(), RATE, Duration::MAX).map_err(|error| error.to_string())
         })
         .await
         .map_err(|error| error.to_string())

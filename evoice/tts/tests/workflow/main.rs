@@ -11,6 +11,7 @@ mod conformance;
 mod fake;
 mod neutts;
 mod pocket;
+mod prompt;
 mod qwen3;
 mod runner;
 mod session;

@@ -154,9 +154,11 @@ async fn test_meeting_diarizes_while_transcribing() {
     let path = PathBuf::from(&paths[0]);
     let extension = path.extension().and_then(|ext| ext.to_str()).map(str::to_owned);
     let bytes = std::fs::read(&path).unwrap();
-    let samples = tokio::task::spawn_blocking(move || AudioFile::decode(bytes, extension.as_deref(), RATE).unwrap())
-        .await
-        .unwrap();
+    let samples = tokio::task::spawn_blocking(move || {
+        AudioFile::decode(bytes, extension.as_deref(), RATE, std::time::Duration::MAX).unwrap()
+    })
+    .await
+    .unwrap();
     let mut settings = Settings::default();
     settings.stt.pipeline.diarize.backend = DiarizeBackend::Sherpa;
     let nodes = std::sync::Arc::new(Nodes::build(&settings, &fixture::store()).unwrap());

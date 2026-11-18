@@ -23,7 +23,7 @@ pub struct Settings {
 impl Settings {
     // ##### PRIVATE #####
 
-    fn validate_rules(&self) -> [(bool, &'static str, String); 15] {
+    fn validate_rules(&self) -> [(bool, &'static str, String); 16] {
         let pipeline = &self.stt.pipeline;
         let (ww, vad, asr, ser) = (&pipeline.ww, &pipeline.vad, &pipeline.asr, &pipeline.ser);
         let nemotron_only = asr.backend != AsrBackend::Nemotron && asr.chunk.is_some();
@@ -44,6 +44,11 @@ impl Settings {
                 self.stt.api.upload >= 1,
                 "stt.api.upload",
                 "must be at least 1 MiB".to_owned(),
+            ),
+            (
+                self.stt.api.duration > Duration::ZERO,
+                "stt.api.duration",
+                "must be positive".to_owned(),
             ),
             (
                 pipeline.pending >= 1,

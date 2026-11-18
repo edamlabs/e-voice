@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use e_voice_core::runtime::Runtime;
 use e_voice_core::schema::lang::Lang;
 use tokio_util::sync::CancellationToken;
@@ -6,8 +8,8 @@ use crate::config::api::EmotionMode;
 use crate::workflow::runner::Runner;
 
 /// Shared by every request: the runner over the loaded nodes, request defaults (`lang`, `emotion`),
-/// the selectable file engines (default first) `/v1/models` advertises, the upload limit in bytes, and the shutdown signal
-/// every stream obeys.
+/// the selectable file engines (default first) `/v1/models` advertises, the upload limit in bytes, the
+/// longest audio an upload may decode to, and the shutdown signal every stream obeys.
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub runner: Runner,
@@ -15,6 +17,7 @@ pub struct AppState {
     pub emotion: EmotionMode,
     pub models: Vec<String>,
     pub upload: usize,
+    pub duration: Duration,
     pub runtime: Runtime,
     pub shutdown: CancellationToken,
 }
