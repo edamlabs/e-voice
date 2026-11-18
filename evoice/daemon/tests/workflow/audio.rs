@@ -117,3 +117,32 @@ async fn test_clear_after_open_reaches_the_device_and_drops_what_it_held() {
     let log = events(&device.log);
     assert_eq!(log[1], Ev::Clear, "{log:?}");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_finish_reaches_the_device_when_open_and_is_a_no_op_while_closed() {
+    let device = Device::new(0, 0);
+    let audio = device.thread();
+    audio.finish();
+    assert_eq!(audio.pending().await, 0.0);
+    assert_eq!(events(&device.log), Vec::<Ev>::new());
+    audio.open().await.unwrap();
+    audio.finish();
+    assert_eq!(audio.pending().await, 0.0);
+    assert_eq!(events(&device.log)[0], Ev::Finish);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_push_the_device_refuses_is_logged_and_the_thread_goes_on() {
+    let mut device = Device::new(0, 0);
+    device.fail_pushes = true;
+    let audio = device.thread();
+    audio.open().await.unwrap();
+    audio.push(vec![0.1; 4], rate());
+    audio.push(vec![0.2; 4], rate());
+    assert_eq!(audio.pending().await, 0.0);
+    let pushes = events(&device.log)
+        .iter()
+        .filter(|event| matches!(event, Ev::Push { .. }))
+        .count();
+    assert_eq!(pushes, 2);
+}

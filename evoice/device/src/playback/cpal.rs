@@ -102,11 +102,17 @@ impl CpalPlayback {
 }
 
 impl Playback for CpalPlayback {
-    fn push(&self, samples: &[f32], rate: NonZeroU32) {
+    fn push(&self, samples: &[f32], rate: NonZeroU32) -> Result<(), DeviceError> {
         self.queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(samples, rate, self.rate);
+            .push(samples, rate, self.rate)?;
+        Ok(())
+    }
+
+    fn finish(&self) -> Result<(), DeviceError> {
+        self.queue.lock().unwrap_or_else(PoisonError::into_inner).finish()?;
+        Ok(())
     }
 
     fn clear(&self) {

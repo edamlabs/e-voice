@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 enum Order {
     Open(oneshot::Sender<Result<(), DeviceError>>),
     Push(Vec<f32>, NonZeroU32),
+    Finish,
     Clear,
     Pending(oneshot::Sender<f64>),
 }
@@ -48,8 +49,18 @@ impl AudioThread {
                 device
             }
             Order::Push(samples, rate) => {
-                if let Some(ready) = &device {
-                    ready.push(&samples, rate);
+                if let Some(ready) = &device
+                    && let Err(error) = ready.push(&samples, rate)
+                {
+                    tracing::warn!(%error, "speaker.push.failed");
+                }
+                device
+            }
+            Order::Finish => {
+                if let Some(ready) = &device
+                    && let Err(error) = ready.finish()
+                {
+                    tracing::warn!(%error, "speaker.finish.failed");
                 }
                 device
             }
@@ -95,6 +106,11 @@ impl AudioThread {
     /// Queues `samples` recorded at `rate`; dropped while the device is not open.
     pub fn push(&self, samples: Vec<f32>, rate: NonZeroU32) {
         self.orders.send(Order::Push(samples, rate)).ok();
+    }
+
+    /// Ends a stream so its last samples play; dropped while the device is not open.
+    pub fn finish(&self) {
+        self.orders.send(Order::Finish).ok();
     }
 
     /// Drops whatever the device has not played yet (barge-in).

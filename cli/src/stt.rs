@@ -44,7 +44,7 @@ impl SttError {
     fn hint(error: &DeviceError) -> &'static str {
         match error {
             DeviceError::Input(_) => "; run `ecli devices`",
-            DeviceError::Output | DeviceError::Format(_) | DeviceError::Backend(_) => "",
+            DeviceError::Output | DeviceError::Format(_) | DeviceError::Backend(_) | DeviceError::Resample(_) => "",
         }
     }
 }

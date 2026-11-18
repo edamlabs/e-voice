@@ -20,6 +20,7 @@ pub enum Ev {
     Playing,
     Silent,
     Clear,
+    Finish,
 }
 
 pub type Log = Arc<Mutex<Vec<Ev>>>;
@@ -38,6 +39,8 @@ pub struct FakePlayback {
     stamps: Stamps,
     polls: Mutex<u32>,
     drain_polls: u32,
+    tail_polls: u32,
+    fail_pushes: bool,
     dropped: Arc<AtomicBool>,
 }
 
@@ -49,13 +52,23 @@ impl FakePlayback {
 }
 
 impl Playback for FakePlayback {
-    fn push(&self, samples: &[f32], rate: NonZeroU32) {
+    fn push(&self, samples: &[f32], rate: NonZeroU32) -> Result<(), DeviceError> {
         self.record(Ev::Push {
             rate: rate.get(),
             len: samples.len(),
             first: samples.first().copied().unwrap_or_default(),
         });
+        if self.fail_pushes {
+            return Err(DeviceError::Output);
+        }
         *self.polls.lock().unwrap() = self.drain_polls;
+        Ok(())
+    }
+
+    fn finish(&self) -> Result<(), DeviceError> {
+        self.record(Ev::Finish);
+        *self.polls.lock().unwrap() += self.tail_polls;
+        Ok(())
     }
 
     fn clear(&self) {
@@ -91,6 +104,8 @@ pub struct Device {
     pub hold_open: Arc<AtomicBool>,
     drain_polls: u32,
     fail_first: usize,
+    pub tail_polls: u32,
+    pub fail_pushes: bool,
 }
 
 impl Device {
@@ -103,6 +118,8 @@ impl Device {
             hold_open: Arc::default(),
             drain_polls,
             fail_first,
+            tail_polls: 0,
+            fail_pushes: false,
         }
     }
 
@@ -114,7 +131,8 @@ impl Device {
             Arc::clone(&self.opens),
             Arc::clone(&self.dropped),
         );
-        let (drain_polls, fail_first) = (self.drain_polls, self.fail_first);
+        let (drain_polls, fail_first, tail_polls, fail_pushes) =
+            (self.drain_polls, self.fail_first, self.tail_polls, self.fail_pushes);
         move || {
             let attempt = opens.fetch_add(1, Ordering::SeqCst);
             while hold.load(Ordering::SeqCst) {
@@ -126,6 +144,8 @@ impl Device {
                     stamps: Arc::clone(&stamps),
                     polls: Mutex::new(0),
                     drain_polls,
+                    tail_polls,
+                    fail_pushes,
                     dropped: Arc::clone(&dropped),
                 })
                 .ok_or(DeviceError::Output)
@@ -273,4 +293,16 @@ pub fn long(count: usize, marker: f32) -> FakeSpeech {
     let mut speech = FakeSpeech::new(move |_| (0..count).map(|_| Ok(frame(marker, 4))).collect());
     speech.period = Some(Duration::from_millis(80));
     speech
+}
+
+/// The audio thread records a clear after `stop` has answered; waits for it, up to a second.
+pub async fn cleared(device: &Device) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while Instant::now() < deadline {
+        if events(&device.log).contains(&Ev::Clear) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    false
 }

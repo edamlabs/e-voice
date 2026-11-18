@@ -135,6 +135,7 @@ impl SpeechQueue {
         state.send_replace(SpeechState::Speaking { id });
         let (result, stop) = match Self::start_stream(speech, audio, request, controls).await {
             Streamed::Done(result) => {
+                audio.finish();
                 state.send_replace(SpeechState::Draining { id });
                 let stop = Self::start_drain(audio, controls).await;
                 let outcome = stop.as_ref().map_or(Outcome::Done, |_| Outcome::Cancelled);

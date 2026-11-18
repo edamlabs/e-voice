@@ -65,6 +65,38 @@ impl TtsArgs {
         });
     }
 
+    fn run_samples(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
+            .collect()
+    }
+
+    fn run_play(speaker: Option<&CpalPlayback>, samples: &[f32], rate: u32) {
+        if let (Some(speaker), Some(rate)) = (speaker, NonZeroU32::new(rate))
+            && let Err(error) = speaker.push(samples, rate)
+        {
+            eprintln!("ecli: speaker: {error}");
+        }
+    }
+
+    /// Ends a sentence or the stream: the resampler's tail plays.
+    fn run_finish(speaker: Option<&CpalPlayback>) {
+        if let Some(Err(error)) = speaker.map(Playback::finish) {
+            eprintln!("ecli: speaker: {error}");
+        }
+    }
+
+    /// Plays out everything queued before returning.
+    async fn run_drain(speaker: Option<&CpalPlayback>) {
+        Self::run_finish(speaker);
+        while speaker.is_some_and(|speaker| speaker.pending() > 0.0) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
     // ##### PUBLIC #####
 
     /// # Errors
@@ -112,15 +144,8 @@ impl TtsArgs {
                 message = source.next() => match message {
                     Some(Ok(Message::Binary(bytes))) => {
                         first.get_or_insert_with(|| start.elapsed());
-                        let samples: Vec<f32> = bytes
-                            .as_chunks::<4>()
-                            .0
-                            .iter()
-                            .map(|chunk| f32::from_le_bytes(*chunk))
-                            .collect();
-                        if let (Some(speaker), Some(rate)) = (&speaker, NonZeroU32::new(rate)) {
-                            speaker.push(&samples, rate);
-                        }
+                        let samples = Self::run_samples(&bytes);
+                        Self::run_play(speaker.as_ref(), &samples, rate);
                         if let Some(writer) = recorder.as_mut() {
                             samples.iter().try_for_each(|sample| hound::WavWriter::write_sample(writer, *sample))?;
                         }
@@ -142,7 +167,12 @@ impl TtsArgs {
                                 eprintln!("{DIM}ready · {} Hz · voice {}{RESET}", rate, field("voice"));
                             }
                             "start" => eprintln!("{DIM}▶ {}{RESET}", field("text").as_str().unwrap_or_default()),
-                            "end" if !field("error").is_null() => eprintln!("{DIM}■ {}{RESET}", field("error")),
+                            "end" => {
+                                if !field("error").is_null() {
+                                    eprintln!("{DIM}■ {}{RESET}", field("error"));
+                                }
+                                Self::run_finish(speaker.as_ref());
+                            }
                             "error" => eprintln!("ecli: {}", field("message")),
                             "closed" => break,
                             _ => {}
@@ -161,9 +191,7 @@ impl TtsArgs {
         if let Some(writer) = recorder {
             writer.finalize()?;
         }
-        while speaker.as_ref().is_some_and(|speaker| speaker.pending() > 0.0) {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+        Self::run_drain(speaker.as_ref()).await;
         Ok(())
     }
 }

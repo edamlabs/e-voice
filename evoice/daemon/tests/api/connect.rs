@@ -66,3 +66,45 @@ async fn test_a_service_that_never_answers_the_handshake_is_a_502_within_the_bou
     );
     daemon.stop().await;
 }
+
+/// A TTS service that answers `ready` with `rate` and then nothing.
+async fn announcing(rate: u64) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                while let Some(Ok(message)) = socket.next().await {
+                    if matches!(&message, Message::Text(text) if text.contains("close")) {
+                        break;
+                    }
+                }
+                socket
+                    .send(Message::text(format!(r#"{{"type":"ready","rate":{rate}}}"#)))
+                    .await
+                    .unwrap();
+                let _ = socket.next().await;
+            });
+        }
+    });
+    url
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_service_announcing_an_absurd_rate_is_a_502_naming_it_and_the_daemon_lives() {
+    for rate in [4_294_967_295u64, 384_001, 0] {
+        let device = Device::new(0, 0);
+        let state = AppState {
+            speech: SpeechQueue::start(TtsSpeech::new(announcing(rate).await), device.thread()),
+        };
+        let daemon = Running::start(state).await;
+        let (status, body) = daemon.speak(r#"{"text":"hola"}"#).await;
+        assert_eq!(status, 502, "rate {rate}: {body}");
+        assert!(body.contains(&format!("`ready` with rate {rate}")), "{body}");
+        assert!(!events(&device.log).iter().any(|event| matches!(event, Ev::Push { .. })));
+        assert_eq!(daemon.get("/health").await.0, 200);
+        daemon.stop().await;
+    }
+}

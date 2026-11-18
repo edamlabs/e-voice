@@ -1,4 +1,5 @@
 use cpal::SampleFormat;
+use e_voice_core::audio::AudioError;
 
 /// Why an audio device could not be listed or opened.
 #[derive(Debug, thiserror::Error)]
@@ -11,4 +12,6 @@ pub enum DeviceError {
     Format(SampleFormat),
     #[error("audio backend: {0}")]
     Backend(#[from] cpal::Error),
+    #[error("resampling: {0}")]
+    Resample(#[from] AudioError),
 }

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::workflow::queue::SpeechState;
 
-use crate::fake::{Device, Ev, FakeSpeech, events, long, queue};
+use crate::fake::{Device, Ev, FakeSpeech, cleared, events, long, queue};
 use crate::running::Running;
 
 async fn daemon(speech: FakeSpeech, device: &Device) -> (Running, AppState) {
@@ -48,7 +48,7 @@ async fn test_stop_cuts_a_speak_in_flight_and_that_speak_answers_cancelled() {
     assert_eq!((status, body.as_str()), (200, r#"{"stopped":0,"dropped":0}"#));
     let (status, body) = speaking.await.unwrap();
     assert_eq!((status, body.as_str()), (200, r#"{"id":0,"outcome":"cancelled"}"#));
-    assert!(events(&device.log).contains(&Ev::Clear));
+    assert!(cleared(&device).await, "the device was never cleared");
     let (status, body) = daemon.speak(r#"{"text":"1"}"#).await;
     assert_eq!(status, 200);
     assert!(

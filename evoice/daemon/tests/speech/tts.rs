@@ -325,3 +325,27 @@ async fn test_cancel_on_a_dead_connection_is_a_protocol_error() {
     }
     assert!(failed, "cancelling on a closed socket never failed");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_ready_rate_outside_the_bound_is_a_protocol_error_naming_it() {
+    for rate in [4_294_967_295u64, 384_001, 0] {
+        let error = fail(vec![text(&format!(r#"{{"type":"ready","rate":{rate}}}"#))]).await;
+        assert!(
+            matches!(&error, SpeechError::Protocol(why) if why.contains(&format!("rate {rate}"))),
+            "{rate}: {error:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_ready_rate_at_the_bound_is_accepted() {
+    let server = Scripted::start(vec![
+        text(r#"{"type":"ready","rate":384000}"#),
+        floats(&[0.1, 0.2]),
+        text(CLOSED),
+    ])
+    .await;
+    let (frames, error) = drain(&server.url(), request("x")).await;
+    assert_eq!(error, None);
+    assert_eq!(frames[0].rate.get(), 384_000);
+}

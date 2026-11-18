@@ -272,3 +272,57 @@ async fn test_the_queue_prints_its_state() {
     assert!(format!("{busy:?}").contains("Speaking"));
     waiting.abort();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_stream_ending_finishes_the_device_and_the_drain_waits_for_the_tail() {
+    let mut device = Device::new(1, 0);
+    device.tail_polls = 3;
+    let speech = queue(FakeSpeech::marked(), &device);
+    let started = Instant::now();
+    assert_eq!(speech.say(say("5")).await.unwrap(), (0, Outcome::Done));
+    assert!(
+        started.elapsed() >= Duration::from_millis(80),
+        "four polls of 20 ms, took {:?}",
+        started.elapsed()
+    );
+    let log = events(&device.log);
+    let finish = log
+        .iter()
+        .position(|event| *event == Ev::Finish)
+        .expect("the stream was never finished");
+    let last_push = log.iter().rposition(|event| matches!(event, Ev::Push { .. })).unwrap();
+    assert!(last_push < finish, "{log:?}");
+    assert_eq!(
+        log[finish + 1..].iter().filter(|event| **event == Ev::Playing).count(),
+        4,
+        "{log:?}"
+    );
+    assert_eq!(log.last(), Some(&Ev::Silent));
+    assert_eq!(log.iter().filter(|event| **event == Ev::Finish).count(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_stream_that_fails_midway_is_finished_too() {
+    let device = Device::new(0, 0);
+    let fake = FakeSpeech::new(|_| vec![Ok(frame(4.0, 4)), Err(SpeechError::Server("cut".to_owned()))]);
+    let speech = queue(fake, &device);
+    assert!(speech.say(say("x")).await.is_err());
+    let log = events(&device.log);
+    let finish = log
+        .iter()
+        .position(|event| *event == Ev::Finish)
+        .expect("a failed stream was not finished");
+    assert!(
+        log[..finish].iter().any(|event| matches!(event, Ev::Push { .. })),
+        "{log:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_device_that_refuses_the_audio_does_not_kill_the_queue() {
+    let mut device = Device::new(0, 0);
+    device.fail_pushes = true;
+    let speech = queue(FakeSpeech::marked(), &device);
+    assert_eq!(speech.say(say("1")).await.unwrap(), (0, Outcome::Done));
+    assert_eq!(speech.say(say("2")).await.unwrap(), (1, Outcome::Done));
+}

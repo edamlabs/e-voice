@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use e_voice_daemon::speech::base::SpeechError;
 use e_voice_daemon::workflow::queue::{Halted, Outcome, SpeakError, SpeechQueue, SpeechState};
 
-use crate::fake::{Device, Ev, FakeSpeech, events, long, queue, say};
+use crate::fake::{Device, Ev, FakeSpeech, cleared, events, long, queue, say};
 
 async fn until(what: &str, mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -65,11 +65,21 @@ async fn test_stop_while_speaking_cuts_the_service_the_device_and_the_say() {
     assert_eq!(talking.await.unwrap().unwrap(), (0, Outcome::Cancelled));
     assert_eq!(cancels.load(Ordering::SeqCst), 1);
     assert_eq!(speech.state(), SpeechState::Idle);
+    while returned.elapsed() < Duration::from_millis(80)
+        && !device
+            .stamps
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, event)| *event == Ev::Clear)
+    {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
     let stamps = device.stamps.lock().unwrap().clone();
     let clear = stamps
         .iter()
         .find(|(_, event)| *event == Ev::Clear)
-        .expect("the device was cleared")
+        .expect("the device was not cleared within one frame of the stop")
         .0;
     assert!(
         clear <= returned + Duration::from_millis(80),
@@ -104,7 +114,7 @@ async fn test_stop_while_draining_clears_the_device_without_telling_the_service(
     );
     assert_eq!(talking.await.unwrap().unwrap(), (0, Outcome::Cancelled));
     assert_eq!(cancels.load(Ordering::SeqCst), 0);
-    assert!(events(&device.log).contains(&Ev::Clear));
+    assert!(cleared(&device).await, "the device was never cleared");
     assert_eq!(speech.state(), SpeechState::Idle);
 }
 
@@ -159,7 +169,7 @@ async fn test_a_failed_cancel_is_logged_not_fatal_and_the_device_is_still_cleare
     assert_eq!(halted.stopped, Some(0));
     assert_eq!(talking.await.unwrap().unwrap(), (0, Outcome::Cancelled));
     assert_eq!(cancels.load(Ordering::SeqCst), 1);
-    assert!(events(&device.log).contains(&Ev::Clear));
+    assert!(cleared(&device).await, "the device was never cleared");
     assert_eq!(speech.state(), SpeechState::Idle);
     assert!(speech.say(say("again")).await.is_ok());
 }

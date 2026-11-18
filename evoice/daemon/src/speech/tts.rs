@@ -2,6 +2,7 @@ use std::fmt::{self, Debug};
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use e_voice_core::audio::MAX_RATE;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -118,9 +119,9 @@ impl Utterance for TtsUtterance {
                 Err(error) => return Some(Err(SpeechError::Protocol(error.to_string()))),
             };
             match event {
-                Ok(TtsEvent::Ready { rate }) => match NonZeroU32::new(rate) {
+                Ok(TtsEvent::Ready { rate }) => match NonZeroU32::new(rate).filter(|rate| rate.get() <= MAX_RATE) {
                     Some(rate) => self.rate = Some(rate),
-                    None => return Some(Err(SpeechError::Protocol("`ready` with rate 0".to_owned()))),
+                    None => return Some(Err(SpeechError::Protocol(format!("`ready` with rate {rate}")))),
                 },
                 Ok(TtsEvent::End { error: Some(error) }) => return Some(Err(SpeechError::Server(error.to_string()))),
                 Ok(TtsEvent::Error { message }) => return Some(Err(SpeechError::Server(message.unwrap_or_default()))),
