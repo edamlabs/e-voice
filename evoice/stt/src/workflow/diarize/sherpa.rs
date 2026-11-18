@@ -70,8 +70,9 @@ impl SherpaDiarize {
             segmentation: OfflineSpeakerSegmentationModelConfig {
                 pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
                     model: Some(
-                        Some(weights.display().to_string())
-                            .filter(|_| weights.is_file())
+                        weights
+                            .is_file()
+                            .then_some(weights.display().to_string())
                             .ok_or_else(|| BackendError::Missing(weights.clone()))?,
                     ),
                     ..OfflineSpeakerSegmentationPyannoteModelConfig::default()

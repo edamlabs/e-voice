@@ -14,21 +14,27 @@ use crate::schema::segment::{Segment, SegmentId, SegmentSpan};
 use crate::workflow::gate::{Gate, GatePolicy, GateRoute};
 use crate::workflow::join::{Branch, Join, Slot};
 
-/// The required ASR node: how it consumes speech and how long it may take once speech ends.
+/// The required ASR node: how it consumes speech and how long it may take once speech ends; `None`
+/// waits however long it takes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AsrPlan {
     pub mode: Mode,
-    pub deadline: Duration,
+    pub deadline: Option<Duration>,
 }
 
-/// The optional SER node: its deadline and the shortest segment, in samples, worth classifying.
+/// The optional SER node: its deadline (`None` waits) and the shortest segment, in samples, worth
+/// classifying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SerPlan {
-    pub deadline: Duration,
+    pub deadline: Option<Duration>,
     pub min: u64,
 }
 
 /// Everything one session decides by; built per stream from configuration and backend shape.
+///
+/// Every wall-clock limit is optional: a file run sets them all to `None`, since a busy machine must
+/// slow it down, never cost it a segment. A backend that hangs then holds the request until the
+/// client drops it, which cancels the run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionPlan {
     pub lang: Lang,
@@ -39,7 +45,8 @@ pub struct SessionPlan {
     /// `None` never sheds: an intake that bounds its backlog by pausing reads, where one read may
     /// still hold several segments.
     pub overload: Option<Overload>,
-    pub stall: Duration,
+    /// `None`: an open segment never fails for lasting.
+    pub stall: Option<Duration>,
 }
 
 impl SessionPlan {
@@ -54,20 +61,20 @@ impl SessionPlan {
             (true, GateClose::Session) => GatePolicy::Session,
         };
         let ser = classify.then(|| SerPlan {
-            deadline: config.ser.deadline,
+            deadline: Some(config.ser.deadline),
             min: Audio::length(config.ser.min),
         });
         Self {
             lang,
             asr: AsrPlan {
                 mode,
-                deadline: config.asr.deadline,
+                deadline: Some(config.asr.deadline),
             },
             ser,
             gate,
             pending: config.pending,
             overload: Some(config.overload),
-            stall: config.stall,
+            stall: Some(config.stall),
         }
     }
 }
@@ -245,13 +252,13 @@ impl Session {
         };
         if asr.is_some() {
             slot.asr = Branch::Running {
-                deadline: now.saturating_add(plan.asr.deadline),
+                deadline: plan.asr.deadline.map(|deadline| now.saturating_add(deadline)),
             };
         }
         let ser = match (&slot.ser, plan.ser) {
             (Branch::Waiting, Some(ser)) if segment.span.len() >= ser.min => {
                 slot.ser = Branch::Running {
-                    deadline: now.saturating_add(ser.deadline),
+                    deadline: ser.deadline.map(|deadline| now.saturating_add(deadline)),
                 };
                 Some(SessionCommand::Classify(segment.clone()))
             }
@@ -316,7 +323,7 @@ impl Session {
             .join
             .slots()
             .filter_map(|(id, slot)| {
-                let stalled = slot.open && now.saturating_sub(slot.opened) >= stall;
+                let stalled = slot.open && stall.is_some_and(|stall| now.saturating_sub(slot.opened) >= stall);
                 stalled.then(|| slot.fail(&NodeError::Stalled));
                 let asr = slot.asr.expire(now);
                 let ser = slot.ser.expire(now);

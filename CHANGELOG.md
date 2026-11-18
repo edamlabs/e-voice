@@ -20,8 +20,10 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
   - Evidence: DER 0.3297 on the 8 VoxConverse dev files the radar measured at 0.3298 (`pyannote.metrics` 4.2.0,
     collar 0, overlap scored); a 61-min meeting labelled with 12 voices in 548–617 s on a loaded machine, 442 of 443
     segments with a speaker; 14 response bodies of a 500-segment fixture byte-identical to the previous release.
-  - Open: one early run failed one segment and none since has; error not yet captured — deadlines that still apply to an
-    uploaded file are the suspect.
+  - No wall-clock limit fails a segment of an uploaded file: under load a diarized 61-min upload lost 10 of 443
+    segments to the ASR deadline (`Timeout`). Its ASR and SER deadlines and its stall limit are now absent, as its
+    overload policy; live audio keeps them all. Evidence: `test_file_transcribe_waits_past_the_asr_deadline` red
+    (12 of 12) then green.
 - Diarization choices for the embedding bench (TODO_vehicle step 3): `embedding` (`wespeaker-resnet34-lm` default,
   `campplus-zh-en`, `eres2net-voxceleb`) and `precision` (`fp32` default, `int8`). No default changes until the
   bench decides.

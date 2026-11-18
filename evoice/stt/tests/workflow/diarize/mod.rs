@@ -63,7 +63,7 @@ fn test_join_segment_without_turn_is_absent() {
 #[test]
 fn test_join_touching_turn_is_not_overlap() {
     let joined = SpeakersEvent::join(&segments(&[(100, 200)]), &[turn(0, 100, 1), turn(200, 300, 2)]);
-    assert!(joined.segments.is_empty());
+    assert_eq!(joined.segments, Vec::new());
 }
 
 #[test]
@@ -110,8 +110,8 @@ fn test_join_nested_turn_does_not_hide_the_long_one() {
 
 #[test]
 fn test_join_empty_inputs() {
-    assert!(SpeakersEvent::join(&[], &[turn(0, 10, 1)]).segments.is_empty());
-    assert!(SpeakersEvent::join(&segments(&[(0, 10)]), &[]).segments.is_empty());
+    assert_eq!(SpeakersEvent::join(&[], &[turn(0, 10, 1)]).segments, Vec::new());
+    assert_eq!(SpeakersEvent::join(&segments(&[(0, 10)]), &[]).segments, Vec::new());
 }
 
 fn reference(segs: &[(SegmentId, SegmentSpan)], turns: &[Turn]) -> Vec<(u64, u32)> {
@@ -245,13 +245,11 @@ async fn test_asked_runs_once_and_speakers_precede_closed() {
     };
     assert_eq!(speakers(joined), [(0, 0), (1, 1)]);
     assert_eq!(joined.error, None);
-    assert!(
-        events[..n - 2]
-            .iter()
-            .filter(|event| matches!(event, Event::Final(_)))
-            .count()
-            == 2
-    );
+    let finals = events[..n - 2]
+        .iter()
+        .filter(|event| matches!(event, Event::Final(_)))
+        .count();
+    assert_eq!(finals, 2);
 }
 
 #[tokio::test(flavor = "multi_thread")]

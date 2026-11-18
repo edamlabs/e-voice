@@ -24,7 +24,7 @@ use crate::workflow::asr::registry::AsrBackend;
 use crate::workflow::denoise::base::DenoiseSession;
 use crate::workflow::gate::GateRoute;
 use crate::workflow::nodes::Nodes;
-use crate::workflow::session::{Session, SessionCommand, SessionInput, SessionOutput, SessionPlan};
+use crate::workflow::session::{AsrPlan, SerPlan, Session, SessionCommand, SessionInput, SessionOutput, SessionPlan};
 use crate::workflow::vad::base::{VadEvent, VadSession};
 use crate::workflow::ww::base::WwSession;
 
@@ -40,8 +40,9 @@ pub enum RunnerError {
     Diarize(NodeError),
 }
 
-/// How audio enters a run. `Live` follows the configured gate and sheds load by the overload policy;
-/// `File` skips the gate and stops reading audio while the backlog is full, so no segment is lost.
+/// How audio enters a run. `Live` follows the configured gate, sheds load by the overload policy and
+/// keeps its deadlines; `File` skips the gate, stops reading audio while the backlog is full and drops
+/// every wall-clock limit, so no segment is lost to load.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerIntake {
     Live,
@@ -404,12 +405,19 @@ impl Runner {
             (RunnerIntake::File, Some(offline)) => offline.clone(),
             (RunnerIntake::File, None) | (RunnerIntake::Live, _) => self.nodes.asr.clone(),
         };
-        let plan = SessionPlan {
-            overload: match intake {
-                RunnerIntake::Live => Some(self.config.overload),
-                RunnerIntake::File => None,
+        let configured = SessionPlan::new(&self.config, lang, asr.mode(), gated, self.nodes.ser.is_some());
+        let plan = match intake {
+            RunnerIntake::Live => configured,
+            RunnerIntake::File => SessionPlan {
+                asr: AsrPlan {
+                    deadline: None,
+                    ..configured.asr
+                },
+                ser: configured.ser.map(|ser| SerPlan { deadline: None, ..ser }),
+                overload: None,
+                stall: None,
+                ..configured
             },
-            ..SessionPlan::new(&self.config, lang, asr.mode(), gated, self.nodes.ser.is_some())
         };
         let (results, mut done) = mpsc::unbounded_channel();
         let ww = self

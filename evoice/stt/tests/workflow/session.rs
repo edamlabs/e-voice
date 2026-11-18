@@ -39,7 +39,10 @@ fn ms(n: u64) -> Duration {
 
 fn plan() -> impl Strategy<Value = SessionPlan> {
     let mode = prop_oneof![Just(Mode::Streaming), Just(Mode::Batch)];
-    let ser = proptest::option::of((100u64..3_000, 0u64..16_000).prop_map(|(d, min)| SerPlan { deadline: ms(d), min }));
+    let ser = proptest::option::of((100u64..3_000, 0u64..16_000).prop_map(|(d, min)| SerPlan {
+        deadline: Some(ms(d)),
+        min,
+    }));
     let gate = prop_oneof![
         Just(GatePolicy::Disabled),
         (500u64..10_000).prop_map(|i| GatePolicy::Utterance { idle: ms(i) }),
@@ -52,13 +55,13 @@ fn plan() -> impl Strategy<Value = SessionPlan> {
             lang: Lang::Es,
             asr: AsrPlan {
                 mode,
-                deadline: ms(asr),
+                deadline: Some(ms(asr)),
             },
             ser,
             gate,
             pending,
             overload,
-            stall: ms(stall),
+            stall: Some(ms(stall)),
         },
     )
 }
@@ -244,16 +247,26 @@ proptest! {
 }
 
 fn unbounded() -> impl Strategy<Value = SessionPlan> {
-    plan().prop_map(|plan| SessionPlan { overload: None, ..plan })
+    plan().prop_map(|plan| SessionPlan {
+        asr: AsrPlan {
+            deadline: None,
+            ..plan.asr
+        },
+        ser: plan.ser.map(|ser| SerPlan { deadline: None, ..ser }),
+        overload: None,
+        stall: None,
+        ..plan
+    })
 }
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2_000))]
 
     #[test]
-    fn test_none_never_fails_a_segment_as_overload(plan in unbounded(), ops in prop::collection::vec(op(), 0..80), end in finale()) {
-        let (outputs, _) = run(plan, &ops, end);
-        prop_assert!(finals(&outputs).iter().all(|event| event.error != Some(NodeError::Overload)));
+    fn test_without_limits_no_segment_fails_by_clock_or_load(plan in unbounded(), ops in prop::collection::vec(op(), 0..80)) {
+        let (outputs, _) = run(plan, &ops, Finale::Cancel);
+        let clock = [Some(NodeError::Overload), Some(NodeError::Timeout), Some(NodeError::Stalled)];
+        prop_assert!(finals(&outputs).iter().all(|event| !clock.contains(&event.error)));
     }
 }
 
@@ -298,16 +311,16 @@ fn batch_plan() -> SessionPlan {
         lang: Lang::En,
         asr: AsrPlan {
             mode: Mode::Batch,
-            deadline: ms(1_000),
+            deadline: Some(ms(1_000)),
         },
         ser: Some(SerPlan {
-            deadline: ms(500),
+            deadline: Some(ms(500)),
             min: 1_000,
         }),
         gate: GatePolicy::Disabled,
         pending: 2,
         overload: Some(Overload::Reject),
-        stall: ms(30_000),
+        stall: Some(ms(30_000)),
     }
 }
 
