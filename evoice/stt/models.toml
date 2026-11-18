@@ -96,3 +96,19 @@ files = [
   { url = "file://data/stt/ops/exports/emotion2vec-plus-large/emotion2vec_plus_large.onnx", sha256 = "2d05754cdb5d59b420c2df9b1271877517b5eed85fa28ae99d341b32fb8d5c88" },
   { url = "file://data/stt/ops/exports/emotion2vec-plus-large/emotion2vec_head.json", sha256 = "45e769b4e1d02d77cc1ceb20e0bf74eb91d61aa8e7c1b83acd03b070de4feb60" },
 ]
+
+[[model]]
+id = "pyannote-segmentation-3.0"
+files = [{ url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2", sha256 = "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488", unpack = "tar.bz2", strip = 1 }]
+
+[[model]]
+id = "wespeaker-resnet34-lm"
+files = [{ url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx", sha256 = "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012" }]
+
+[[model]]
+id = "campplus-zh-en-advanced"
+files = [{ url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx", sha256 = "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2" }]
+
+[[model]]
+id = "eres2net-en-voxceleb"
+files = [{ url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx", sha256 = "c59158379255ad66e161679cca6af8d52d51e389e3224ab7d7a7baae295c2db5" }]

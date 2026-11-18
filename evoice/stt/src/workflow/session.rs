@@ -36,7 +36,9 @@ pub struct SessionPlan {
     pub ser: Option<SerPlan>,
     pub gate: GatePolicy,
     pub pending: usize,
-    pub overload: Overload,
+    /// `None` never sheds: an intake that bounds its backlog by pausing reads, where one read may
+    /// still hold several segments.
+    pub overload: Option<Overload>,
     pub stall: Duration,
 }
 
@@ -64,7 +66,7 @@ impl SessionPlan {
             ser,
             gate,
             pending: config.pending,
-            overload: config.overload,
+            overload: Some(config.overload),
             stall: config.stall,
         }
     }
@@ -166,11 +168,11 @@ impl Session {
     fn step_open(&mut self, now: Duration, at: u64) -> SegmentId {
         let full = self.join.live() >= self.plan.pending.max(1);
         let evicted = match (full, self.plan.overload) {
-            (true, Overload::Evict) => self.join.oldest(),
-            (true, Overload::Reject) | (false, _) => None,
+            (true, Some(Overload::Evict)) => self.join.oldest(),
+            (true, Some(Overload::Reject) | None) | (false, _) => None,
         };
         let aborts = evicted.map(|id| self.step_evict(id));
-        let dropped = full && self.plan.overload == Overload::Reject;
+        let dropped = full && self.plan.overload == Some(Overload::Reject);
         let id = self.join.open(at, now, dropped);
         let begin = match (self.plan.asr.mode, dropped) {
             (Mode::Streaming, false) => Some(SessionCommand::Begin(id)),
@@ -350,6 +352,7 @@ impl Session {
                     text,
                     emotion,
                     error,
+                    speaker: None,
                 })
             })
             .collect();

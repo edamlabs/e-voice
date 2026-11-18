@@ -1,6 +1,7 @@
 pub mod api;
 pub mod asr;
 pub mod denoise;
+pub mod diarize;
 pub mod lid;
 pub mod pipeline;
 pub mod ser;

@@ -15,8 +15,9 @@ use crate::config::asr::AsrEngine;
 use crate::config::pipeline::PipelineConfig;
 use crate::schema::audio::{Audio, RATE};
 use crate::schema::emotion::Emotion;
-use crate::schema::event::Event;
+use crate::schema::event::{Event, SpeakersEvent};
 use crate::schema::segment::{Segment, SegmentId, SegmentSpan};
+use crate::schema::speaker::{Diarization, Turn};
 use crate::schema::transcript::Transcript;
 use crate::workflow::asr::base::AsrSession;
 use crate::workflow::asr::registry::AsrBackend;
@@ -35,6 +36,8 @@ pub enum RunnerError {
     Panicked(&'static str),
     #[error("the run ended before closing its session")]
     Incomplete,
+    #[error(transparent)]
+    Diarize(NodeError),
 }
 
 /// How audio enters a run. `Live` follows the configured gate and sheds load by the overload policy;
@@ -310,6 +313,40 @@ impl Runner {
         self.run_step(stream, SessionInput::Drain, lang).await
     }
 
+    /// The whole file's speaker turns; `None` unless asked and loaded, so otherwise nothing runs or
+    /// allocates. The blocking call cannot be cancelled: a dropped request lets it finish and frees
+    /// its result.
+    async fn file_turns(
+        &self,
+        samples: Arc<Vec<f32>>,
+        diarization: Diarization,
+    ) -> Option<Result<Vec<Turn>, NodeError>> {
+        let diarize = self.nodes.diarize.clone().filter(|_| diarization == Diarization::Run)?;
+        Some(
+            spawn_blocking(move || diarize.diarize(&samples))
+                .await
+                .unwrap_or_else(|_| Err(NodeError::Backend("diarize panicked".to_owned()))),
+        )
+    }
+
+    /// Forwards a file run's events except `Closed`, keeping each final's span; `None` when the run
+    /// ended without closing or the consumer went away (dropping `run` then cancels the run).
+    async fn file_relay(
+        mut run: mpsc::Receiver<Event>,
+        events: &mpsc::Sender<Event>,
+    ) -> Option<Vec<(SegmentId, SegmentSpan)>> {
+        let mut spans = Vec::new();
+        while let Some(event) = run.recv().await {
+            match &event {
+                Event::Closed => return Some(spans),
+                Event::Final(done) => spans.push((done.segment, done.span)),
+                Event::Wake(_) | Event::Speech(_) | Event::Partial(_) | Event::Speakers(_) => {}
+            }
+            events.send(event).await.ok()?;
+        }
+        None
+    }
+
     // ##########################################################
 
     // ##### PUBLIC #####
@@ -322,6 +359,12 @@ impl Runner {
             config: Arc::new(config),
             jobs,
         }
+    }
+
+    /// Whether a diarization node is loaded, so a request may ask for speakers.
+    #[must_use]
+    pub fn diarizes(&self) -> bool {
+        self.nodes.diarize.is_some()
     }
 
     /// This runner with uploads transcribed by `engine`; `None` when that engine is not loaded.
@@ -361,7 +404,13 @@ impl Runner {
             (RunnerIntake::File, Some(offline)) => offline.clone(),
             (RunnerIntake::File, None) | (RunnerIntake::Live, _) => self.nodes.asr.clone(),
         };
-        let plan = SessionPlan::new(&self.config, lang, asr.mode(), gated, self.nodes.ser.is_some());
+        let plan = SessionPlan {
+            overload: match intake {
+                RunnerIntake::Live => Some(self.config.overload),
+                RunnerIntake::File => None,
+            },
+            ..SessionPlan::new(&self.config, lang, asr.mode(), gated, self.nodes.ser.is_some())
+        };
         let (results, mut done) = mpsc::unbounded_channel();
         let ww = self
             .nodes
@@ -417,50 +466,79 @@ impl Runner {
         Ok(())
     }
 
-    /// Runs a whole decoded file through a lossless [`RunnerIntake::File`] run on its own task.
-    /// Events end with [`Event::Closed`]; a channel that ends without it means the run failed.
-    /// Dropping the receiver cancels the run.
+    /// Runs a whole decoded file through a lossless [`RunnerIntake::File`] run on its own task, with
+    /// diarization over the same samples beside it when asked and loaded. Events end with
+    /// [`Event::Closed`], preceded by one [`Event::Speakers`] when diarized; a channel that ends
+    /// without `Closed` means the run failed. Dropping the receiver cancels the run.
     #[must_use]
-    pub fn file(&self, lang: Lang, samples: Vec<f32>) -> mpsc::Receiver<Event> {
+    pub fn file(
+        &self,
+        lang: Lang,
+        samples: impl Into<Arc<Vec<f32>>>,
+        diarization: Diarization,
+    ) -> mpsc::Receiver<Event> {
+        let samples: Arc<Vec<f32>> = samples.into();
         let (audio_tx, audio_rx) = mpsc::channel(4);
+        let (run_tx, run_rx) = mpsc::channel(64);
         let (events_tx, events_rx) = mpsc::channel(64);
         let runner = self.clone();
         let chunk = usize::try_from(Audio::length(Duration::from_secs(1))).unwrap_or(usize::MAX);
         tokio::spawn(async move {
+            let audio = Arc::clone(&samples);
             let feed = async move {
-                for piece in samples.chunks(chunk) {
+                for piece in audio.chunks(chunk) {
                     if audio_tx.send(Audio::from(piece.to_vec())).await.is_err() {
                         return;
                     }
                 }
             };
-            let run = runner.run(lang, RunnerIntake::File, audio_rx, events_tx, CancellationToken::new());
-            let ((), outcome) = tokio::join!(feed, run);
-            if let Err(error) = outcome {
-                tracing::error!(%error, "file.failed");
+            let transcription = async {
+                let run = runner.run(lang, RunnerIntake::File, audio_rx, run_tx, CancellationToken::new());
+                let ((), outcome, spans) = tokio::join!(feed, run, Self::file_relay(run_rx, &events_tx));
+                if let Err(error) = outcome {
+                    tracing::error!(%error, "file.failed");
+                }
+                spans
+            };
+            // The one seam: `(transcription.await, runner.file_turns(..).await)` runs them in turn.
+            let (spans, turns) = tokio::join!(transcription, runner.file_turns(samples, diarization));
+            let Some(spans) = spans else {
+                return;
+            };
+            let speakers = turns
+                .map(|turns| turns.map_or_else(SpeakersEvent::failed, |turns| SpeakersEvent::join(&spans, &turns)));
+            for event in speakers.map(Event::Speakers).into_iter().chain([Event::Closed]) {
+                if events_tx.send(event).await.is_err() {
+                    return;
+                }
             }
         });
         events_rx
     }
 
-    /// Collects [`Runner::file`] into one [`Transcript`].
+    /// Collects [`Runner::file`] into one [`Transcript`], speakers folded into the finals.
     ///
     /// # Errors
-    /// The run ended without closing its session.
-    pub async fn transcribe(&self, lang: Lang, samples: Vec<f32>) -> Result<Transcript, RunnerError> {
-        let total = samples.len() as u64;
-        let mut events = self.file(lang, samples);
-        let mut segments = Vec::new();
+    /// The run ended without closing its session, or diarization failed.
+    pub async fn transcribe(
+        &self,
+        lang: Lang,
+        samples: impl Into<Arc<Vec<f32>>>,
+        diarization: Diarization,
+    ) -> Result<Transcript, RunnerError> {
+        let samples: Arc<Vec<f32>> = samples.into();
+        let mut transcript = Transcript {
+            lang,
+            samples: samples.len() as u64,
+            segments: Vec::new(),
+        };
+        let mut events = self.file(lang, samples, diarization);
         while let Some(event) = events.recv().await {
             match event {
-                Event::Final(done) => segments.push(done),
-                Event::Closed => {
-                    return Ok(Transcript {
-                        lang,
-                        samples: total,
-                        segments,
-                    });
-                }
+                Event::Final(done) => transcript.segments.push(done),
+                Event::Speakers(SpeakersEvent { error: Some(error), .. }) => return Err(RunnerError::Diarize(error)),
+                Event::Speakers(speakers) => transcript.label(&speakers),
+                Event::Closed => return Ok(transcript),
                 Event::Wake(_) | Event::Speech(_) | Event::Partial(_) => {}
             }
         }

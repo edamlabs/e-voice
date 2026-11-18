@@ -20,6 +20,10 @@ The response follows Deepgram's shape:
 - `results.channels[0].alternatives[0].transcript` with `detected_language`;
 - one `results.utterances[]` entry per segment, with `start`/`end` in seconds and `emotion`.
 
+`diarize=true` or any `diarize_model` adds `speaker` (an integer from 0, in order of first appearance) to each
+`results.utterances[]` entry, when `[stt.pipeline.diarize]` is on; while it is off the parameter is ignored. `words`
+stays empty: word-level timing is not produced. Live audio carries no speakers.
+
 Errors use `{"err_code", "err_msg", "request_id"}`.
 
 ## Live

@@ -6,6 +6,26 @@ All notable changes to this project are documented in this file.
 
 Same services, same APIs: the project moves to the EDamLabs organisation.
 
+### Added
+
+- STT diarization node (TODO_vehicle step 2): `[stt.pipeline.diarize]`, off by default, on sherpa-onnx's offline
+  speaker diarization (pyannote segmentation 3.0 + WeSpeaker ResNet34-LM), run over an uploaded file beside its
+  transcription, and only when the request asks. Each segment takes the speaker that overlaps it longest, numbered
+  from 0 in order of first appearance. Live audio carries no speakers.
+  - OpenAI: `response_format=diarized_json` (segments with `speaker` `A`, `B`, …; 400 while the node is off; a
+    streamed upload emits `transcript.text.segment` events before it ends). Deepgram: `diarize=true` or
+    `diarize_model` → `utterances[].speaker`; `words` stays empty, there are no word timestamps. Scribe:
+    `diarize=true` → `words[].speaker_id` (`speaker_0`, …). Without the ask every response is unchanged.
+  - A diarization that fails after the ask answers 500 in each surface's error envelope, never a 200 without speakers.
+  - Evidence: DER 0.3297 on the 8 VoxConverse dev files the radar measured at 0.3298 (`pyannote.metrics` 4.2.0,
+    collar 0, overlap scored); a 61-min meeting labelled with 12 voices in 548–617 s on a loaded machine, 442 of 443
+    segments with a speaker; 14 response bodies of a 500-segment fixture byte-identical to the previous release.
+  - Open: one early run failed one segment and none since has; error not yet captured — deadlines that still apply to an
+    uploaded file are the suspect.
+- Diarization choices for the embedding bench (TODO_vehicle step 3): `embedding` (`wespeaker-resnet34-lm` default,
+  `campplus-zh-en`, `eres2net-voxceleb`) and `precision` (`fp32` default, `int8`). No default changes until the
+  bench decides.
+
 ### Changed
 
 - Home: <https://github.com/edamlabs/e-voice>, documentation <https://edamlabs.github.io/e-voice/>; the old
@@ -20,6 +40,12 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Fixed
 
+- STT batch (TODO_vehicle step 1): a file run never sheds a segment. One 1 s chunk carrying several
+  utterances met the live overload policy and answered «N segment(s) failed: dropped under load» on long uploads.
+  Evidence: `test_file_transcribe_keeps_every_utterance_of_a_dense_second` red before the cut (9 of 12 segments
+  `Overload` at `pending = 1`), green after; `test_live_intake_still_drops_a_dense_second` keeps the live drop
+  policy; a 61-min meeting through `POST /v1/audio/transcriptions` on CPU: 438 segments, none failed, RTF 0.079,
+  peak RSS 4.6 GiB with models loaded.
 - Benchmark (`eval/`) pinned to Python 3.14: CI had moved to 3.15.1, where polars 1.44.2 breaks its tests.
 
 ### Security

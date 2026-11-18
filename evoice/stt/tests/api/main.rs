@@ -9,6 +9,7 @@
 
 mod app;
 mod deepgram;
+mod diarize;
 mod docs;
 mod elevenlabs;
 #[allow(dead_code)]
@@ -17,5 +18,6 @@ mod fake;
 mod health;
 mod lifespan;
 mod realtime;
+mod render;
 mod stream;
 mod transcriptions;

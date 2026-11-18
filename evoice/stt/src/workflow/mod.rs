@@ -1,5 +1,6 @@
 pub mod asr;
 pub mod denoise;
+pub mod diarize;
 pub mod gate;
 pub mod join;
 pub mod lid;

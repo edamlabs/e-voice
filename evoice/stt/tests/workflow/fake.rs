@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use e_voice_core::schema::error::{BackendError, NodeError};
@@ -8,9 +9,11 @@ use e_voice_stt::schema::audio::Audio;
 use e_voice_stt::schema::emotion::{Emotion, EmotionLabel};
 use e_voice_stt::schema::event::WakeEvent;
 use e_voice_stt::schema::segment::SegmentSpan;
+use e_voice_stt::schema::speaker::Turn;
 use e_voice_stt::workflow::asr::base::{AsrSession, BatchAsr, StreamingAsr};
 use e_voice_stt::workflow::asr::registry::AsrBackend;
 use e_voice_stt::workflow::denoise::base::{Denoise, DenoiseSession};
+use e_voice_stt::workflow::diarize::base::Diarize;
 use e_voice_stt::workflow::lid::base::Lid;
 use e_voice_stt::workflow::nodes::Nodes;
 use e_voice_stt::workflow::ser::base::Ser;
@@ -210,6 +213,7 @@ pub fn nodes(asr: AsrBackend, ser: Option<Arc<dyn Ser>>, ww: Option<Arc<dyn Ww>>
         offline: None,
         extra: Vec::new(),
         ser,
+        diarize: None,
     })
 }
 
@@ -223,6 +227,7 @@ pub fn stratified(live: AsrBackend, offline: AsrBackend) -> Arc<Nodes> {
         offline: Some(offline),
         extra: Vec::new(),
         ser: None,
+        diarize: None,
     })
 }
 
@@ -244,4 +249,56 @@ pub fn ser(delay_ms: u64) -> Arc<dyn Ser> {
     Arc::new(FakeSer {
         delay: Duration::from_millis(delay_ms),
     })
+}
+
+#[derive(Debug)]
+pub struct FakeDiarize {
+    pub turns: Result<Vec<Turn>, NodeError>,
+    pub calls: AtomicUsize,
+    pub heard: AtomicUsize,
+}
+
+impl FakeDiarize {
+    pub fn new(turns: Result<Vec<Turn>, NodeError>) -> Arc<Self> {
+        Arc::new(Self {
+            turns,
+            calls: AtomicUsize::new(0),
+            heard: AtomicUsize::new(0),
+        })
+    }
+
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl Diarize for FakeDiarize {
+    fn diarize(&self, audio: &[f32]) -> Result<Vec<Turn>, NodeError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.heard.store(audio.len(), Ordering::SeqCst);
+        self.turns.clone()
+    }
+}
+
+pub fn diarizing(asr: AsrBackend, fake: &Arc<FakeDiarize>) -> Arc<Nodes> {
+    let mut built = nodes(asr, None, None);
+    Arc::get_mut(&mut built).unwrap().diarize = Some(Arc::clone(fake) as Arc<dyn Diarize>);
+    built
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct PanickingDiarize;
+
+impl Diarize for PanickingDiarize {
+    fn diarize(&self, _audio: &[f32]) -> Result<Vec<Turn>, NodeError> {
+        panic!("fake diarize panics");
+    }
+}
+
+#[allow(dead_code)]
+pub fn panicking(asr: AsrBackend) -> Arc<Nodes> {
+    let mut built = nodes(asr, None, None);
+    Arc::get_mut(&mut built).unwrap().diarize = Some(Arc::new(PanickingDiarize));
+    built
 }

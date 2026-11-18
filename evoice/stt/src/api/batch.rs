@@ -6,6 +6,7 @@ use crate::api::state::AppState;
 use crate::config::asr::AsrEngine;
 use crate::schema::audio::RATE;
 use crate::schema::event::Event;
+use crate::schema::speaker::Diarization;
 use crate::schema::transcript::Transcript;
 use crate::workflow::runner::Runner;
 
@@ -24,6 +25,16 @@ pub enum BatchError {
 pub struct Batch;
 
 impl Batch {
+    /// What a request's ask for speakers comes to on this server: `Run` only while the diarization
+    /// node is loaded. Whether an ask the server cannot honour is refused or ignored is each door's.
+    #[must_use]
+    pub fn diarization(state: &AppState, asked: Diarization) -> Diarization {
+        match (asked, state.runner.diarizes()) {
+            (Diarization::Run, true) => Diarization::Run,
+            (Diarization::Run, false) | (Diarization::Skip, _) => Diarization::Skip,
+        }
+    }
+
     /// The runner for a request's model field: a loaded engine by name or id, else the default.
     ///
     /// # Errors
@@ -62,6 +73,7 @@ impl Batch {
         bytes: Vec<u8>,
         extension: Option<String>,
         lang: Lang,
+        diarization: Diarization,
     ) -> Result<Transcript, BatchError> {
         let runner = Self::runner(state, model)?;
         let samples = Self::decode(bytes, extension).await?;
@@ -71,7 +83,7 @@ impl Batch {
             "transcription.start"
         );
         let transcript = runner
-            .transcribe(lang, samples)
+            .transcribe(lang, samples, diarization)
             .await
             .map_err(|error| BatchError::Failed(error.to_string()))?;
         let failed: Vec<String> = transcript
@@ -99,10 +111,11 @@ impl Batch {
         bytes: Vec<u8>,
         extension: Option<String>,
         lang: Lang,
+        diarization: Diarization,
     ) -> Result<(mpsc::Receiver<Event>, f64), BatchError> {
         let runner = Self::runner(state, model)?;
         let samples = Self::decode(bytes, extension).await?;
         let seconds = Transcript::seconds(samples.len() as u64);
-        Ok((runner.file(lang, samples), seconds))
+        Ok((runner.file(lang, samples, diarization), seconds))
     }
 }
