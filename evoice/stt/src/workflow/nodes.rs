@@ -9,6 +9,8 @@ use crate::core::settings::Settings;
 use crate::workflow::asr::registry::{AsrBackend, AsrRegistry};
 use crate::workflow::denoise::base::Denoise;
 use crate::workflow::denoise::registry::DenoiseRegistry;
+use crate::workflow::diarize::base::Diarize;
+use crate::workflow::diarize::registry::DiarizeRegistry;
 use crate::workflow::lid::base::Lid;
 use crate::workflow::lid::registry::LidRegistry;
 use crate::workflow::ser::base::Ser;
@@ -30,7 +32,7 @@ pub enum NodesError {
 
 /// Every backend the pipeline runs, built once and shared read-only by all streams.
 /// `offline`, when set, replaces `asr` for uploaded files; `extra` holds the further engines a
-/// request may select.
+/// request may select; `diarize` runs once per uploaded file, beside the segment pipeline.
 #[derive(Debug, Clone)]
 pub struct Nodes {
     pub denoise: Option<Arc<dyn Denoise>>,
@@ -41,6 +43,7 @@ pub struct Nodes {
     pub offline: Option<AsrBackend>,
     pub extra: Vec<(AsrEngine, AsrBackend)>,
     pub ser: Option<Arc<dyn Ser>>,
+    pub diarize: Option<Arc<dyn Diarize>>,
 }
 
 impl Nodes {
@@ -57,6 +60,7 @@ impl Nodes {
             offline: AsrRegistry::offline(&pipeline.asr, store)?,
             extra: AsrRegistry::extra(&pipeline.asr, store)?,
             ser: SerRegistry::build(&pipeline.ser, store)?,
+            diarize: DiarizeRegistry::build(&pipeline.diarize, store)?,
         })
     }
 

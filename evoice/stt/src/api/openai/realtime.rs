@@ -239,7 +239,7 @@ impl LiveProtocol for Realtime {
                     }
                 }
             }
-            Event::Wake(_) | Event::Closed => Vec::new(),
+            Event::Wake(_) | Event::Speakers(_) | Event::Closed => Vec::new(),
         }
     }
 

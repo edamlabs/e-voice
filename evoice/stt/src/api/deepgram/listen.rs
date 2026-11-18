@@ -16,6 +16,7 @@ use crate::api::state::AppState;
 use crate::config::api::EmotionMode;
 use crate::schema::emotion::Emotion;
 use crate::schema::event::{Event, FinalEvent, SpeechState};
+use crate::schema::speaker::Diarization;
 use crate::schema::transcript::Transcript;
 
 /// Error body in the shape Deepgram clients parse.
@@ -52,8 +53,8 @@ impl From<BatchError> for DeepgramError {
     }
 }
 
-/// `/v1/listen` query: Deepgram's names; options that do not apply (`punctuate`, `smart_format`,
-/// `diarize`, …) are accepted and ignored.
+/// `/v1/listen` query: Deepgram's names; options that do not apply (`punctuate`, `smart_format`, …) are
+/// accepted and ignored.
 #[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(default)]
 pub struct ListenQuery {
@@ -70,6 +71,10 @@ pub struct ListenQuery {
     pub interim_results: Option<bool>,
     /// `field`, `tag` or `off` for the `emotion` extension.
     pub emotion: Option<String>,
+    /// Prerecorded only: `true` labels each utterance with its speaker; ignored while diarization is off.
+    pub diarize: Option<bool>,
+    /// Prerecorded only: any value asks for speakers like `diarize=true`; the model is the server's.
+    pub diarize_model: Option<String>,
 }
 
 impl ListenQuery {
@@ -93,6 +98,13 @@ impl ListenQuery {
             .map_err(invalid)?
             .unwrap_or(state.emotion);
         Ok((lang, emotion))
+    }
+
+    fn diarization(&self) -> Diarization {
+        match (self.diarize, &self.diarize_model) {
+            (Some(true), _) | (_, Some(_)) => Diarization::Run,
+            (Some(false) | None, None) => Diarization::Skip,
+        }
     }
 }
 
@@ -169,21 +181,23 @@ impl Deepgram {
             .iter()
             .filter(|segment| !segment.text.is_empty())
             .map(|segment| {
-                let single = Transcript {
-                    segments: vec![segment.clone()],
-                    ..transcript.clone()
-                };
                 let mut utterance = json!({
                     "start": Transcript::seconds(segment.span.start),
                     "end": Transcript::seconds(segment.span.end),
                     "confidence": 1.0,
                     "channel": 0,
-                    "transcript": single.text(emotion.tags()),
+                    "transcript": Transcript::line(segment, emotion.tags()),
                     "words": [],
                     "id": uuid::Uuid::new_v4().to_string(),
                 });
-                if let Some(object) = utterance.as_object_mut().filter(|_| emotion.field()) {
-                    object.insert("emotion".to_owned(), json!(segment.emotion));
+                if let Some(object) = utterance.as_object_mut() {
+                    object.extend(
+                        emotion
+                            .field()
+                            .then(|| ("emotion".to_owned(), json!(segment.emotion)))
+                            .into_iter()
+                            .chain(segment.speaker.map(|speaker| ("speaker".to_owned(), json!(speaker.0)))),
+                    );
                 }
                 utterance
             })
@@ -257,7 +271,7 @@ impl LiveProtocol for Deepgram {
                     Message::Text(close.to_string().into()),
                 ]
             }
-            Event::Partial(_) | Event::Wake(_) | Event::Closed => Vec::new(),
+            Event::Partial(_) | Event::Wake(_) | Event::Speakers(_) | Event::Closed => Vec::new(),
         }
     }
 
@@ -298,7 +312,15 @@ pub async fn prerecorded(
                 .unwrap_or_default()
                 .to_owned()
         });
-    let transcript = Batch::transcribe(&state, query.model.as_deref(), body.to_vec(), extension, lang).await?;
+    let transcript = Batch::transcribe(
+        &state,
+        query.model.as_deref(),
+        body.to_vec(),
+        extension,
+        lang,
+        Batch::diarization(&state, query.diarization()),
+    )
+    .await?;
     let model = query
         .model
         .clone()

@@ -11,6 +11,7 @@
 
 mod asr;
 mod denoise;
+mod diarize;
 mod fake;
 mod fixture;
 mod lid;

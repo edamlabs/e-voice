@@ -39,26 +39,29 @@ fn ms(n: u64) -> Duration {
 
 fn plan() -> impl Strategy<Value = SessionPlan> {
     let mode = prop_oneof![Just(Mode::Streaming), Just(Mode::Batch)];
-    let ser = proptest::option::of((100u64..3_000, 0u64..16_000).prop_map(|(d, min)| SerPlan { deadline: ms(d), min }));
+    let ser = proptest::option::of((100u64..3_000, 0u64..16_000).prop_map(|(d, min)| SerPlan {
+        deadline: Some(ms(d)),
+        min,
+    }));
     let gate = prop_oneof![
         Just(GatePolicy::Disabled),
         (500u64..10_000).prop_map(|i| GatePolicy::Utterance { idle: ms(i) }),
         (500u64..10_000).prop_map(|i| GatePolicy::Window { idle: ms(i) }),
         Just(GatePolicy::Session),
     ];
-    let overload = prop_oneof![Just(Overload::Reject), Just(Overload::Evict)];
+    let overload = prop_oneof![Just(Some(Overload::Reject)), Just(Some(Overload::Evict)), Just(None)];
     (mode, 100u64..3_000, ser, gate, 0usize..4, overload, 1_000u64..20_000).prop_map(
         |(mode, asr, ser, gate, pending, overload, stall)| SessionPlan {
             lang: Lang::Es,
             asr: AsrPlan {
                 mode,
-                deadline: ms(asr),
+                deadline: Some(ms(asr)),
             },
             ser,
             gate,
             pending,
             overload,
-            stall: ms(stall),
+            stall: Some(ms(stall)),
         },
     )
 }
@@ -187,7 +190,7 @@ proptest! {
     #[test]
     fn test_pending_never_exceeds_limit(plan in plan(), ops in prop::collection::vec(op(), 0..80), end in finale()) {
         let (_, peak) = run(plan, &ops, end);
-        prop_assert!(peak <= plan.pending.max(1));
+        prop_assert!(plan.overload.is_none() || peak <= plan.pending.max(1));
     }
 
     #[test]
@@ -243,21 +246,81 @@ proptest! {
     }
 }
 
+fn unbounded() -> impl Strategy<Value = SessionPlan> {
+    plan().prop_map(|plan| SessionPlan {
+        asr: AsrPlan {
+            deadline: None,
+            ..plan.asr
+        },
+        ser: plan.ser.map(|ser| SerPlan { deadline: None, ..ser }),
+        overload: None,
+        stall: None,
+        ..plan
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    #[test]
+    fn test_without_limits_no_segment_fails_by_clock_or_load(plan in unbounded(), ops in prop::collection::vec(op(), 0..80)) {
+        let (outputs, _) = run(plan, &ops, Finale::Cancel);
+        let clock = [Some(NodeError::Overload), Some(NodeError::Timeout), Some(NodeError::Stalled)];
+        prop_assert!(finals(&outputs).iter().all(|event| !clock.contains(&event.error)));
+    }
+}
+
+#[test]
+fn test_none_admits_past_the_limit_without_abort() {
+    let mut session = Session::new(SessionPlan {
+        pending: 1,
+        overload: None,
+        gate: GatePolicy::Disabled,
+        ..batch_plan()
+    });
+    let span = |start| SegmentSpan {
+        start,
+        end: start + 2_000,
+    };
+    (0..3u64).for_each(|n| {
+        session.step(ms(0), SessionInput::Start { at: n * 4_000 });
+        session.step(
+            ms(0),
+            SessionInput::End {
+                span: span(n * 4_000),
+                audio: Audio::from(vec![0.0; 8]),
+            },
+        );
+    });
+    let outputs: Vec<SessionOutput> = session.poll().collect();
+    let transcribed = outputs
+        .iter()
+        .filter(|output| matches!(output, SessionOutput::Command(SessionCommand::Transcribe(_))))
+        .count();
+    assert_eq!(transcribed, 3);
+    assert!(
+        !outputs
+            .iter()
+            .any(|output| matches!(output, SessionOutput::Command(SessionCommand::Abort(_))))
+    );
+    assert!(finals(&outputs).iter().all(|event| event.error.is_none()));
+}
+
 fn batch_plan() -> SessionPlan {
     SessionPlan {
         lang: Lang::En,
         asr: AsrPlan {
             mode: Mode::Batch,
-            deadline: ms(1_000),
+            deadline: Some(ms(1_000)),
         },
         ser: Some(SerPlan {
-            deadline: ms(500),
+            deadline: Some(ms(500)),
             min: 1_000,
         }),
         gate: GatePolicy::Disabled,
         pending: 2,
-        overload: Overload::Reject,
-        stall: ms(30_000),
+        overload: Some(Overload::Reject),
+        stall: Some(ms(30_000)),
     }
 }
 
@@ -403,6 +466,7 @@ fn test_final_event_serializes_with_type_tag() {
         text: "hola".into(),
         emotion: Emotion::default(),
         error: None,
+        speaker: None,
     });
     let json = serde_json::to_value(&event).unwrap();
     assert_eq!(json["type"], "final");

@@ -173,7 +173,7 @@ One `evoice.toml` for both services, in the working directory (or `--config path
 [stt]                        lang
 [stt.api]                    port, upload, emotion
 [stt.pipeline]               pending, overload, stall, tick, preroll, jobs, gate, gain
-[stt.pipeline.ww|vad|asr|ser] backend + its knobs
+[stt.pipeline.ww|vad|asr|ser|diarize] backend + its knobs
 [stt.ops]                    data, manifest, verify
 [tts]                        lang, voice
 [tts.api]                    port, upload

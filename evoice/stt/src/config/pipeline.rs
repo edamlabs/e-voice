@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::asr::AsrConfig;
 use crate::config::denoise::DenoiseConfig;
+use crate::config::diarize::DiarizeConfig;
 use crate::config::lid::LidConfig;
 use crate::config::ser::SerConfig;
 use crate::config::vad::VadConfig;
@@ -91,6 +92,7 @@ pub struct PipelineConfig {
     pub lid: LidConfig,
     pub asr: AsrConfig,
     pub ser: SerConfig,
+    pub diarize: DiarizeConfig,
 }
 
 impl Default for PipelineConfig {
@@ -110,6 +112,7 @@ impl Default for PipelineConfig {
             lid: LidConfig::default(),
             asr: AsrConfig::default(),
             ser: SerConfig::default(),
+            diarize: DiarizeConfig::default(),
         }
     }
 }

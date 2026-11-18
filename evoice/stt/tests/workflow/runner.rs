@@ -9,6 +9,7 @@ use e_voice_stt::config::ser::SerConfig;
 use e_voice_stt::schema::audio::Audio;
 use e_voice_stt::schema::emotion::EmotionLabel;
 use e_voice_stt::schema::event::{Event, FinalEvent};
+use e_voice_stt::schema::speaker::Diarization;
 use e_voice_stt::workflow::asr::registry::AsrBackend;
 use e_voice_stt::workflow::runner::{Runner, RunnerIntake};
 use tokio::sync::mpsc;
@@ -315,10 +316,192 @@ async fn test_engine_swaps_the_file_backend_only_for_loaded_engines() {
     let text = |transcript: e_voice_stt::schema::transcript::Transcript| transcript.text(false);
     let default = runner.engine(AsrEngine::Parakeet).unwrap();
     assert_eq!(
-        text(default.transcribe(Lang::Es, signal.clone()).await.unwrap()),
+        text(
+            default
+                .transcribe(Lang::Es, signal.clone(), Diarization::Skip)
+                .await
+                .unwrap()
+        ),
         "batch:8000"
     );
     let canary = runner.engine(AsrEngine::Canary).unwrap();
-    assert_eq!(text(canary.transcribe(Lang::Es, signal).await.unwrap()), "canary:8000");
+    assert_eq!(
+        text(canary.transcribe(Lang::Es, signal, Diarization::Skip).await.unwrap()),
+        "canary:8000"
+    );
     assert!(runner.engine(AsrEngine::Cohere).is_none());
+}
+
+fn dense() -> Vec<f32> {
+    let second: Vec<(f32, usize)> = (0..4).flat_map(|_| [(SPEECH, 2_000), (0.0, 2_000)]).collect();
+    audio(&(0..3).flat_map(|_| second.clone()).collect::<Vec<_>>())
+}
+
+fn dense_config() -> PipelineConfig {
+    PipelineConfig {
+        pending: 1,
+        asr: AsrConfig {
+            deadline: Duration::from_secs(5),
+            ..AsrConfig::default()
+        },
+        ..config()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_file_transcribe_keeps_every_utterance_of_a_dense_second() {
+    let runner = Runner::new(nodes(slow(40), None, None), dense_config());
+    let transcript = runner.transcribe(Lang::Es, dense(), Diarization::Skip).await.unwrap();
+    assert_eq!(transcript.segments.len(), 12);
+    assert!(
+        transcript.segments.iter().all(|done| done.error.is_none()),
+        "{:?}",
+        transcript.segments
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_live_intake_still_drops_a_dense_second() {
+    let events = drive_with(
+        Runner::new(nodes(slow(40), None, None), dense_config()),
+        dense(),
+        None,
+        RunnerIntake::Live,
+    )
+    .await;
+    assert!(
+        finals(&events)
+            .iter()
+            .any(|done| done.error == Some(NodeError::Overload)),
+        "{events:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_file_transcribe_keeps_every_utterance_with_ser_on() {
+    let late = SerConfig {
+        deadline: Duration::from_secs(5),
+        min: Duration::ZERO,
+        ..SerConfig::default()
+    };
+    let runner = Runner::new(
+        nodes(slow(40), Some(ser(10)), None),
+        PipelineConfig {
+            ser: late,
+            ..dense_config()
+        },
+    );
+    let transcript = runner.transcribe(Lang::Es, dense(), Diarization::Skip).await.unwrap();
+    assert_eq!(transcript.segments.len(), 12);
+    assert!(
+        transcript
+            .segments
+            .iter()
+            .all(|done| done.error.is_none() && done.emotion.label == EmotionLabel::Happy),
+        "{:?}",
+        transcript.segments
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_file_transcribe_waits_past_the_asr_deadline() {
+    let config = PipelineConfig {
+        asr: AsrConfig {
+            deadline: Duration::from_millis(100),
+            ..AsrConfig::default()
+        },
+        ..config()
+    };
+    let runner = Runner::new(nodes(slow(400), None, None), config);
+    let transcript = runner.transcribe(Lang::Es, dense(), Diarization::Skip).await.unwrap();
+    assert_eq!(transcript.segments.len(), 12);
+    assert!(
+        transcript.segments.iter().all(|done| done.error.is_none()),
+        "{:?}",
+        transcript.segments.iter().map(|done| &done.error).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_live_intake_still_times_out_past_the_asr_deadline() {
+    let config = PipelineConfig {
+        asr: AsrConfig {
+            deadline: Duration::from_millis(100),
+            ..AsrConfig::default()
+        },
+        ..config()
+    };
+    let events = drive_with(
+        Runner::new(nodes(slow(400), None, None), config),
+        audio(&[(SPEECH, 3_200), (0.0, 1_600)]),
+        None,
+        RunnerIntake::Live,
+    )
+    .await;
+    assert!(
+        finals(&events)
+            .iter()
+            .any(|done| done.error == Some(NodeError::Timeout)),
+        "{events:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_file_transcribe_keeps_the_real_emotion_of_a_late_ser() {
+    let runner = Runner::new(nodes(batch(0), Some(ser(400)), None), config());
+    let transcript = runner
+        .transcribe(Lang::Es, audio(&[(SPEECH, 4_000), (0.0, 1_600)]), Diarization::Skip)
+        .await
+        .unwrap();
+    let labels: Vec<EmotionLabel> = transcript.segments.iter().map(|done| done.emotion.label).collect();
+    assert_eq!(labels, [EmotionLabel::Happy], "{:?}", transcript.segments);
+    assert!(transcript.segments.iter().all(|done| done.error.is_none()));
+}
+
+async fn drive_slowly(intake: RunnerIntake, stall: Duration) -> Vec<Event> {
+    let config = PipelineConfig { stall, ..config() };
+    let runner = Runner::new(nodes(batch(0), None, None), config);
+    let (audio_tx, audio_rx) = mpsc::channel(8);
+    let (events_tx, mut events_rx) = mpsc::channel(64);
+    let task = tokio::spawn(async move {
+        runner
+            .run(Lang::Es, intake, audio_rx, events_tx, CancellationToken::new())
+            .await
+    });
+    audio_tx.send(Audio::from(audio(&[(SPEECH, 1_600)]))).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    audio_tx
+        .send(Audio::from(audio(&[(SPEECH, 1_600), (0.0, 1_600)])))
+        .await
+        .unwrap();
+    drop(audio_tx);
+    let mut events = Vec::new();
+    while let Some(event) = events_rx.recv().await {
+        events.push(event);
+    }
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    events
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_file_intake_never_stalls_an_open_segment() {
+    let events = drive_slowly(RunnerIntake::File, Duration::from_millis(100)).await;
+    let done = finals(&events);
+    assert_eq!(done.len(), 1, "{events:?}");
+    assert_eq!(done[0].error, None, "{events:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_live_intake_still_stalls_an_open_segment() {
+    let events = drive_slowly(RunnerIntake::Live, Duration::from_millis(100)).await;
+    assert!(
+        finals(&events)
+            .iter()
+            .any(|done| done.error == Some(NodeError::Stalled)),
+        "{events:?}"
+    );
 }

@@ -11,7 +11,10 @@ use crate::schema::segment::{SegmentId, SegmentSpan};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Branch<T> {
     Waiting,
-    Running { deadline: Duration },
+    /// `None` waits for the node however long it takes.
+    Running {
+        deadline: Option<Duration>,
+    },
     Ready(Result<T, NodeError>),
 }
 
@@ -37,7 +40,9 @@ impl<T> Branch<T> {
 
     pub fn expire(&mut self, now: Duration) -> bool {
         match self {
-            Self::Running { deadline } if *deadline <= now => {
+            Self::Running {
+                deadline: Some(deadline),
+            } if *deadline <= now => {
                 *self = Self::Ready(Err(NodeError::Timeout));
                 true
             }
