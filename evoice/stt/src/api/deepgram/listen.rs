@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::api::batch::{Batch, BatchError};
-use crate::api::live::{Inbound, LiveOutcome, LiveProtocol, LiveStream};
+use crate::api::live::{AUDIO_MESSAGE, Inbound, LiveOutcome, LiveProtocol, LiveStream};
 use crate::api::state::AppState;
 use crate::config::api::EmotionMode;
 use crate::schema::emotion::Emotion;
@@ -373,8 +373,10 @@ pub async fn streaming(
     let rate = query.sample_rate.unwrap_or(16_000);
     let interim = query.interim_results.unwrap_or(true);
     Ok(ws
+        .max_message_size(AUDIO_MESSAGE)
+        .max_frame_size(AUDIO_MESSAGE)
         .on_upgrade(move |socket| {
-            LiveStream::new(lang, rate, encoding).serve(state, socket, Deepgram::new(emotion, interim))
+            LiveStream::new(lang, rate, encoding, AUDIO_MESSAGE).serve(state, socket, Deepgram::new(emotion, interim))
         })
         .into_response())
 }

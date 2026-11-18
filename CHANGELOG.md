@@ -61,6 +61,10 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     hours of silence costs 10 MiB instead of 2.3 GB. A 61-min meeting still goes through whole (438 segments, RTF
     0.068).
   - Deepgram's prerecorded door answers a body past `upload` in Deepgram's error envelope, not plain text.
+  - WebSocket messages are capped: 2 MiB on the audio sockets, 16 MiB on OpenAI Realtime, 64 KiB on the TTS text
+    socket (the default let one legal 16 MiB frame cost the native socket 126 MB; a legal 2 MiB frame now costs
+    11.6 MiB). A client past the cap is closed with 1009 and a reason, not a normal close; the server does not wait
+    for the client's close reply.
   - `POST /v1/voices` stops decoding clips at 30 s in total; its `seconds` now reports the audio learned (at most
     30), not the length uploaded. The audio the voice is learned from is sample-identical to before.
 - rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots and webpki-root-certs 1.0.11, tokio 1.54.1: past their

@@ -19,9 +19,13 @@ mod fake;
 #[allow(dead_code)]
 #[path = "../../../core/tests/support/flac.rs"]
 mod flac;
+mod frames;
 mod health;
 mod lifespan;
 mod rate;
+#[allow(dead_code)]
+#[path = "../../../core/tests/support/rawws.rs"]
+mod rawws;
 mod realtime;
 mod render;
 mod stream;

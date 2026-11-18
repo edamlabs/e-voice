@@ -67,3 +67,5 @@ curl -F voice_id=damien -F file=@me.mp3 -F "text=Lo que digo en el clip." http:/
 
 OpenAI shape, `{"error": {"message", "type"}}`: 400 invalid request, 404 unknown voice, 422 a voice
 the loaded model cannot use, 501 a backend that cannot learn voices, 503 every worker busy.
+
+The text socket caps a message at 64 KiB: past the cap the socket is closed with 1009; the server does not wait for the client's close reply, and a client still sending a single frame larger than the cap may see the connection reset before it reads the close.

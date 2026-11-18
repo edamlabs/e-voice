@@ -17,6 +17,9 @@ mod fake;
 #[allow(dead_code)]
 #[path = "../../../core/tests/support/flac.rs"]
 mod flac;
+#[allow(dead_code)]
+#[path = "../../../core/tests/support/rawws.rs"]
+mod rawws;
 
 use std::time::Duration;
 
@@ -61,6 +64,7 @@ fn wav_claiming(rate: u32) -> Vec<u8> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)]
 async fn test_refusing_absurd_rates_on_every_path_keeps_the_process_small() {
     let (address, _) = app::serve(nodes(batch(0), Some(ser(0)), None), 1 << 28, false).await;
     let warm = reqwest::get(format!("http://{address}/health")).await.unwrap();
@@ -143,5 +147,35 @@ async fn test_refusing_absurd_rates_on_every_path_keeps_the_process_small() {
     assert!(
         grown < 150_000,
         "three 10 h bombs with a 10 s cap grew the peak by {grown} KiB"
+    );
+
+    let (address, _) = app::serve(nodes(batch(0), Some(ser(0)), None), 1 << 20, false).await;
+    let before = peak_kib();
+    let mut socket = rawws::RawWs::connect(&address, "/v1/stream").await;
+    socket.message(rawws::BINARY, &vec![0u8; 2_097_152]).await.unwrap();
+    socket.message(rawws::TEXT, br#"{"type":"end"}"#).await.unwrap();
+    let (frames, closed) = socket.until_close().await;
+    assert!(closed, "{frames:?}");
+    let one = peak_kib().saturating_sub(before);
+    println!("LEGAL_FRAME one 2 MiB frame on the native socket: peak grew {one} KiB");
+    assert!(one < 100_000, "one legal frame grew the peak by {one} KiB");
+    let before = peak_kib();
+    let mut socket = rawws::RawWs::connect(&address, "/v1/stream").await;
+    let flood = vec![0u8; 2_097_152];
+    for _ in 0..64 {
+        if socket.message(rawws::BINARY, &flood).await.is_err() {
+            break;
+        }
+    }
+    let _ = socket.message(rawws::TEXT, br#"{"type":"end"}"#).await;
+    let (frames, closed) = socket.until_close().await;
+    let flooded = peak_kib().saturating_sub(before);
+    println!(
+        "LEGAL_FLOOD 64 legal 2 MiB frames as fast as possible (128 MiB): peak grew {flooded} KiB, closed {closed}, {} frames back",
+        frames.len()
+    );
+    assert!(
+        flooded < 600_000,
+        "a flood of legal frames grew the peak by {flooded} KiB"
     );
 }

@@ -30,7 +30,7 @@ Errors use `{"err_code", "err_msg", "request_id"}`.
 
 `GET /v1/listen?encoding=linear16&sample_rate=48000&language=es` upgrades to a WebSocket.
 
-**Client → server.** Binary audio. `{"type":"CloseStream"}` drains pending segments and closes; other
+**Client → server.** Binary audio, messages capped at 2 MiB (past the cap the socket is closed with 1009; the server does not wait for the client's close reply, and a client still sending a single frame larger than the cap may see the connection reset before it reads the close). `{"type":"CloseStream"}` drains pending segments and closes; other
 control messages (`KeepAlive`, `Finalize`) are accepted.
 
 **Server → client:**

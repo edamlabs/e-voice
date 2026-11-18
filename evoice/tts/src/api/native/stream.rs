@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::Response;
@@ -17,7 +19,16 @@ use crate::workflow::synth::base::SynthSession;
 
 const NORMAL: u16 = 1000;
 const UNSUPPORTED: u16 = 1003;
+/// RFC 6455 «Message Too Big».
+const TOO_BIG: u16 = 1009;
 const INTERNAL: u16 = 1011;
+/// How long a socket closed with 1009 stays open before it is dropped. The refused frame's payload may
+/// still be arriving; dropping at once makes the kernel reset the connection, and the reset can reach
+/// the client before the close does. Nothing is read meanwhile.
+const LINGER: Duration = Duration::from_secs(1);
+/// The largest message or frame the socket takes: 64 KiB, room for one text message of the most
+/// characters a speech request may carry even with every character JSON-escaped.
+const MESSAGE: usize = 65_536;
 
 /// Stream options; a missing `voice` uses the default one.
 #[derive(Debug, Deserialize, IntoParams)]
@@ -118,7 +129,17 @@ pub async fn stream(
         lang,
         voice: named,
     };
-    Ok(ws.on_upgrade(move |socket| serve(state, socket, session, format, ready)))
+    Ok(ws
+        .max_message_size(MESSAGE)
+        .max_frame_size(MESSAGE)
+        .on_upgrade(move |socket| serve(state, socket, session, format, ready)))
+}
+
+/// Whether a read failed because the client's message or frame passed [`MESSAGE`].
+fn oversized(error: &axum::Error) -> bool {
+    std::error::Error::source(error)
+        .and_then(|source| source.downcast_ref::<tungstenite::Error>())
+        .is_some_and(|error| matches!(error, tungstenite::Error::Capacity(_)))
 }
 
 async fn serve(
@@ -163,7 +184,12 @@ async fn serve(
                     code = UNSUPPORTED;
                     break;
                 }
-                Some(Ok(Message::Close(_)) | Err(_)) | None => {
+                Some(Err(error)) => {
+                    code = if oversized(&error) { TOO_BIG } else { code };
+                    cancel.cancel();
+                    break;
+                }
+                Some(Ok(Message::Close(_))) | None => {
                     cancel.cancel();
                     break;
                 }
@@ -194,9 +220,13 @@ async fn serve(
         }
     }
     cancel.cancel();
-    let frame = CloseFrame {
-        code,
-        reason: Utf8Bytes::from_static(""),
+    let reason = match code {
+        TOO_BIG => Utf8Bytes::from(format!("message over {MESSAGE} bytes")),
+        _ => Utf8Bytes::from_static(""),
     };
+    let frame = CloseFrame { code, reason };
     sink.send(Message::Close(Some(frame))).await.ok();
+    if code == TOO_BIG {
+        tokio::time::sleep(LINGER).await;
+    }
 }

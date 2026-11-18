@@ -33,6 +33,10 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "fs", "io
 tokio-util = "0.7.19"
 tower-http = { version = "0.7.1", features = ["cors"] }
 tracing = "0.1.44"
+### axum's own tungstenite, only for its error type: an oversized message closes with 1009, not as a hang-up.
+### It must stay the version axum resolves to (Renovate bumps them apart); if they drift the downcast misses,
+### the close falls back to 1000, and `cargo test -p e-voice-stt --test api frames::` goes red (the over-cap tests).
+tungstenite = "0.29.0"
 utoipa = { version = "6.0.0", features = ["axum_extras"] }
 utoipa-scalar = { version = "0.4.0", features = ["axum"] }
 uuid = { version = "1.26.1", features = ["v4"] }
