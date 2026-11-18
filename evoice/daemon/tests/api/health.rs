@@ -6,6 +6,7 @@ use crate::running::Running;
 fn state(device: &Device) -> AppState {
     AppState {
         speech: queue(FakeSpeech::marked(), device),
+        listen: crate::fake::idle(),
     }
 }
 

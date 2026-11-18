@@ -7,7 +7,7 @@ use e_voice_daemon::core::settings::Settings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use crate::http::{free_port, post_json, request, wait_ready};
+use crate::http::{free_port, post_json, post_typed, request, wait_ready};
 
 /// A daemon serving `state` on a free loopback port.
 pub struct Running {
@@ -54,6 +54,13 @@ impl Running {
     pub async fn speak(&self, body: &str) -> (u16, String) {
         let (port, body) = (self.port, body.to_owned());
         tokio::task::spawn_blocking(move || post_json(port, "/speak", &body))
+            .await
+            .unwrap()
+    }
+
+    pub async fn listen(&self, content_type: Option<&'static str>, body: Option<&str>) -> (u16, String) {
+        let (port, body) = (self.port, body.map(str::to_owned));
+        tokio::task::spawn_blocking(move || post_typed(port, "/listen", content_type, body.as_deref()))
             .await
             .unwrap()
     }

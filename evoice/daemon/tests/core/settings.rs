@@ -1,5 +1,8 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
+use e_voice_core::config::server::ServerConfig;
+use e_voice_daemon::config::daemon::DaemonConfig;
 use e_voice_daemon::core::settings::Settings;
 
 fn file(name: &str, text: &str) -> PathBuf {
@@ -97,4 +100,76 @@ fn test_a_tts_url_that_is_not_ws_is_refused_naming_the_key() {
 #[test]
 fn test_a_host_that_is_not_an_ip_is_refused() {
     assert!(load("host", "[daemon]\nhost = \"localhost\"\n").is_err());
+}
+
+#[test]
+fn test_the_defaults_name_the_local_stt_and_a_fifteen_second_listen() {
+    let daemon = Settings::default().daemon;
+    assert_eq!(daemon.stt, "ws://127.0.0.1:5500");
+    assert_eq!(daemon.listen, Duration::from_secs(15));
+    assert_eq!(daemon.input, None);
+}
+
+#[test]
+fn test_listen_and_stt_and_input_are_read_from_the_daemon_table() {
+    let loaded = load(
+        "listen",
+        "[daemon]\nlisten = \"500ms\"\nstt = \"ws://stt.local:5501\"\ninput = \"Headset\"\n",
+    )
+    .unwrap();
+    assert_eq!(loaded.daemon.listen, Duration::from_millis(500));
+    assert_eq!(loaded.daemon.stt, "ws://stt.local:5501");
+    assert_eq!(loaded.daemon.input.as_deref(), Some("Headset"));
+}
+
+#[test]
+fn test_listen_at_the_longest_is_accepted_and_above_it_or_zero_is_refused_naming_the_key() {
+    assert_eq!(
+        load("l300", "[daemon]\nlisten = \"300s\"\n").unwrap().daemon.listen,
+        Duration::from_secs(300)
+    );
+    assert_eq!(
+        load("l5m", "[daemon]\nlisten = \"5m\"\n").unwrap().daemon.listen,
+        Duration::from_secs(300)
+    );
+    assert_eq!(
+        load("l1ms", "[daemon]\nlisten = \"1ms\"\n").unwrap().daemon.listen,
+        Duration::from_millis(1)
+    );
+    for value in ["301s", "0s", "0ms", "1h"] {
+        let error = load("lbad", &format!("[daemon]\nlisten = \"{value}\"\n")).unwrap_err();
+        assert!(
+            error.contains("daemon.listen") && error.contains("300 s"),
+            "{value}: {error}"
+        );
+    }
+}
+
+#[test]
+fn test_a_listen_that_is_not_a_duration_is_refused() {
+    for value in ["\"soon\"", "15", "\"-1s\"", "\"\"", "true"] {
+        assert!(
+            load("lkind", &format!("[daemon]\nlisten = {value}\n")).is_err(),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn test_a_stt_url_that_is_not_ws_is_refused_naming_the_key() {
+    for url in ["wss://stt.local", "http://stt.local", "stt.local:5500", ""] {
+        let error = load("stt", &format!("[daemon]\nstt = \"{url}\"\n")).unwrap_err();
+        assert!(
+            error.contains("daemon.stt") && error.contains("ws://"),
+            "{url}: {error}"
+        );
+    }
+}
+
+#[test]
+fn test_the_example_file_loads_and_its_daemon_block_is_the_code_defaults() {
+    let example = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evoice.example.toml");
+    let settings = Settings::load(Some(&example)).unwrap();
+    assert_eq!(settings.daemon, DaemonConfig::default());
+    assert_eq!(settings.server, ServerConfig::default());
 }

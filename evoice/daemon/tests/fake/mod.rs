@@ -1,17 +1,25 @@
 #![allow(dead_code, clippy::cast_precision_loss)]
 
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use e_voice_core::schema::emotion::Emotion;
+use e_voice_core::schema::lang::Lang;
+use e_voice_daemon::hearing::base::{Heard, Hearing, HearingError, Recognized, Transcription};
 use e_voice_daemon::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
 use e_voice_daemon::workflow::audio::AudioThread;
+use e_voice_daemon::workflow::capture::{CaptureThread, Deliver};
+use e_voice_daemon::workflow::listen::{Listen, ListenError};
 use e_voice_daemon::workflow::queue::SpeechQueue;
+use e_voice_device::capture::base::Capture;
 use e_voice_device::error::DeviceError;
 use e_voice_device::playback::base::Playback;
-use tokio::sync::Semaphore;
+use futures_util::future::BoxFuture;
+use tokio::sync::{Semaphore, mpsc};
 
 /// What the fake device saw, in order.
 #[derive(Debug, Clone, PartialEq)]
@@ -355,4 +363,261 @@ pub fn counting(frames: usize, len: usize) -> FakeSpeech {
             })
             .collect()
     })
+}
+
+pub fn heard(text: &str) -> Heard {
+    Heard {
+        text: text.to_owned(),
+        lang: Lang::Es,
+        emotion: Emotion::default(),
+    }
+}
+
+type Answer = Arc<dyn Fn(Option<Duration>) -> Result<Heard, ListenError> + Send + Sync>;
+
+/// A `Listen` that answers by a rule and records the timeout each call carried.
+#[derive(Clone)]
+pub struct FakeListen {
+    answer: Answer,
+    pub calls: Arc<Mutex<Vec<Option<Duration>>>>,
+}
+
+impl Debug for FakeListen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FakeListen").finish_non_exhaustive()
+    }
+}
+
+impl FakeListen {
+    pub fn new(answer: impl Fn(Option<Duration>) -> Result<Heard, ListenError> + Send + Sync + 'static) -> Self {
+        Self {
+            answer: Arc::new(answer),
+            calls: Arc::default(),
+        }
+    }
+}
+
+impl Listen for FakeListen {
+    fn listen(&self, timeout: Option<Duration>) -> BoxFuture<'_, Result<Heard, ListenError>> {
+        self.calls.lock().unwrap().push(timeout);
+        let answered = (self.answer)(timeout);
+        Box::pin(async move { answered })
+    }
+}
+
+/// A listen nobody asks for: the state of a test that exercises other doors.
+pub fn idle() -> Arc<dyn Listen> {
+    Arc::new(FakeListen::new(|_| Err(ListenError::Busy)))
+}
+
+/// The test's end of one recognizer session: what the recognizer says goes in, what the listener sent comes out.
+pub struct Feed {
+    pub says: mpsc::UnboundedSender<Result<Recognized, HearingError>>,
+    pub sent: Arc<Mutex<Vec<f32>>>,
+    pub closed: Arc<AtomicBool>,
+}
+
+impl Feed {
+    pub fn say(&self, what: Recognized) {
+        self.says.send(Ok(what)).unwrap();
+    }
+
+    pub fn fail(&self, error: HearingError) {
+        self.says.send(Err(error)).unwrap();
+    }
+
+    pub fn sent(&self) -> Vec<f32> {
+        self.sent.lock().unwrap().clone()
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+}
+
+type Inbox = mpsc::UnboundedReceiver<Result<Recognized, HearingError>>;
+
+struct Session {
+    inbox: Inbox,
+    sent: Arc<Mutex<Vec<f32>>>,
+    closed: Arc<AtomicBool>,
+}
+
+/// A recognizer whose sessions are scripted by the test, one `Feed` each, in the order they are opened.
+#[derive(Clone, Default)]
+pub struct FakeHearing {
+    sessions: Arc<Mutex<VecDeque<Session>>>,
+    pub opens: Arc<AtomicUsize>,
+    pub rates: Arc<Mutex<Vec<u32>>>,
+    pub fail_open: Arc<Mutex<Option<HearingError>>>,
+    pub hold_sends: Arc<AtomicBool>,
+}
+
+impl FakeHearing {
+    pub fn session(&self) -> Feed {
+        let (says, inbox) = mpsc::unbounded_channel();
+        let (sent, closed) = (Arc::<Mutex<Vec<f32>>>::default(), Arc::<AtomicBool>::default());
+        self.sessions.lock().unwrap().push_back(Session {
+            inbox,
+            sent: Arc::clone(&sent),
+            closed: Arc::clone(&closed),
+        });
+        Feed { says, sent, closed }
+    }
+
+    pub fn opened(&self) -> usize {
+        self.opens.load(Ordering::SeqCst)
+    }
+}
+
+pub struct FakeTranscription {
+    inbox: Inbox,
+    sent: Arc<Mutex<Vec<f32>>>,
+    closed: Arc<AtomicBool>,
+    hold: Arc<AtomicBool>,
+}
+
+impl Drop for FakeTranscription {
+    fn drop(&mut self) {
+        self.closed.store(true, Ordering::SeqCst);
+    }
+}
+
+impl Hearing for FakeHearing {
+    type Transcription = FakeTranscription;
+
+    fn open(
+        &self,
+        rate: std::num::NonZeroU32,
+    ) -> impl std::future::Future<Output = Result<FakeTranscription, HearingError>> + Send {
+        self.opens.fetch_add(1, Ordering::SeqCst);
+        self.rates.lock().unwrap().push(rate.get());
+        let failure = self.fail_open.lock().unwrap().clone();
+        let session = self.sessions.lock().unwrap().pop_front();
+        std::future::ready(match (failure, session) {
+            (Some(error), _) => Err(error),
+            (None, None) => Err(HearingError::Connect("no session scripted".to_owned())),
+            (None, Some(session)) => Ok(FakeTranscription {
+                inbox: session.inbox,
+                sent: session.sent,
+                closed: session.closed,
+                hold: Arc::clone(&self.hold_sends),
+            }),
+        })
+    }
+}
+
+impl Transcription for FakeTranscription {
+    async fn send(&mut self, samples: &[f32]) -> Result<(), HearingError> {
+        while self.hold.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        self.sent.lock().unwrap().extend_from_slice(samples);
+        Ok(())
+    }
+
+    async fn next(&mut self) -> Option<Result<Recognized, HearingError>> {
+        self.inbox.recv().await
+    }
+}
+
+#[derive(Debug)]
+struct FakeCapture {
+    released: Arc<AtomicUsize>,
+    opened_on: std::thread::ThreadId,
+    released_on: Arc<Mutex<Option<std::thread::ThreadId>>>,
+}
+
+impl Capture for FakeCapture {
+    fn rate(&self) -> u32 {
+        16_000
+    }
+
+    fn name(&self) -> &'static str {
+        "fake"
+    }
+
+    fn level(&self) -> f32 {
+        0.0
+    }
+}
+
+impl Drop for FakeCapture {
+    fn drop(&mut self) {
+        *self.released_on.lock().unwrap() = Some(std::thread::current().id());
+        self.released.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// An input device the test feeds by hand; counts how often it was opened and released.
+#[derive(Clone, Default)]
+pub struct Mic {
+    pub opens: Arc<AtomicUsize>,
+    pub released: Arc<AtomicUsize>,
+    pub fail: Arc<AtomicBool>,
+    pub opened_on: Arc<Mutex<Option<std::thread::ThreadId>>>,
+    pub released_on: Arc<Mutex<Option<std::thread::ThreadId>>>,
+    deliver: Arc<Mutex<Option<Deliver>>>,
+}
+
+impl Mic {
+    pub fn thread(&self) -> CaptureThread {
+        let mic = self.clone();
+        CaptureThread::new(move |deliver| {
+            if mic.fail.load(Ordering::SeqCst) {
+                return Err(e_voice_device::error::DeviceError::Input(None));
+            }
+            mic.opens.fetch_add(1, Ordering::SeqCst);
+            let me = std::thread::current().id();
+            *mic.opened_on.lock().unwrap() = Some(me);
+            *mic.deliver.lock().unwrap() = Some(deliver);
+            Ok(Box::new(FakeCapture {
+                released: Arc::clone(&mic.released),
+                opened_on: me,
+                released_on: Arc::clone(&mic.released_on),
+            }) as Box<dyn Capture>)
+        })
+    }
+
+    /// One block from the device, on the caller's thread.
+    pub fn block(&self, samples: &[f32]) {
+        (self.deliver.lock().unwrap().as_mut().expect("the device is open"))(samples);
+    }
+
+    /// The device thread's end of the channel goes away, as if the stream died.
+    pub fn die(&self) {
+        self.deliver.lock().unwrap().take();
+    }
+
+    pub fn opened(&self) -> usize {
+        self.opens.load(Ordering::SeqCst)
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.opened() > self.released.load(Ordering::SeqCst)
+    }
+
+    /// Waits up to a second of real time for the device to be released.
+    pub async fn freed(&self) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            if self.opened() > 0 && !self.is_open() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        false
+    }
+
+    /// Waits up to a second of real time for the device to be open.
+    pub async fn live(&self) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            if self.is_open() && self.deliver.lock().unwrap().is_some() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        false
+    }
 }

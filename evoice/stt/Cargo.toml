@@ -42,6 +42,7 @@ utoipa-scalar = { version = "0.4.0", features = ["axum"] }
 uuid = { version = "1.26.1", features = ["v4"] }
 
 [dev-dependencies]
+e-voice-daemon = { path = "../daemon" }
 figment = { version = "0.10.19", features = ["test", "toml", "env"] }
 futures-util = "0.3.34"
 proptest = "1.11.0"

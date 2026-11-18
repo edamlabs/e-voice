@@ -21,6 +21,30 @@ pub fn post_json(port: u16, path: &str, body: &str) -> (u16, String) {
     send(port, "POST", path, Some(body))
 }
 
+/// A POST whose body and content type are the caller's: `None` sends neither.
+#[allow(dead_code)]
+pub fn post_typed(port: u16, path: &str, content_type: Option<&str>, body: Option<&str>) -> (u16, String) {
+    let mut stream =
+        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(2)).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let kind = content_type.map_or_else(String::new, |kind| format!("Content-Type: {kind}\r\n"));
+    let length = body.map_or_else(String::new, |body| format!("Content-Length: {}\r\n", body.len()));
+    write!(
+        stream,
+        "POST {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n{kind}{length}\r\n{}",
+        body.unwrap_or_default()
+    )
+    .unwrap();
+    let mut raw = String::new();
+    stream.read_to_string(&mut raw).unwrap();
+    let status = raw.split_whitespace().nth(1).unwrap().parse().unwrap();
+    let body = raw
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_owned())
+        .unwrap_or_default();
+    (status, body)
+}
+
 fn send(port: u16, method: &str, path: &str, body: Option<&str>) -> (u16, String) {
     let mut stream =
         TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(2)).unwrap();

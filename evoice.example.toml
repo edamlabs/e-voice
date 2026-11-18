@@ -115,3 +115,13 @@ espeak = "espeak-ng"                         # phonemizer binary (neutts)
 data = "data/tts"                            # models/ · voices/ · ops/ (exports, checkpoints, results)
 manifest = "evoice/tts/models.toml"
 verify = "stamp"                             # stamp | full
+
+##### DAEMON #####
+[daemon]                                     # evoiced: the one local process every voice client talks to
+host = "127.0.0.1"                           # loopback: the daemon owns the audio devices; never [server] host
+port = 5700
+tts = "ws://127.0.0.1:5600"                  # TTS service's WebSocket base (ws:// only, TLS not built in)
+stt = "ws://127.0.0.1:5500"                  # STT service's WebSocket base (ws:// only, TLS not built in)
+# output = "…"                               # output device by a part of its name; system default when absent
+# input = "…"                                # input device by a part of its name; system default when absent
+listen = "15s"                               # wait for someone to start speaking; POST /listen may override, at most 300s

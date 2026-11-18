@@ -7,6 +7,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::{Error as SocketError, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
@@ -17,6 +18,10 @@ use crate::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
 /// generous; past it the host is dead or black-holed, and the queue must move on rather than wait out the
 /// OS connect timeout.
 const CONNECT: Duration = Duration::from_secs(5);
+
+/// The largest message or frame read from the service: 256 KiB. Audio comes one 80 ms frame at a time, at
+/// most 120 KiB at the highest rate accepted (`MAX_RATE`, f32); events are JSON of one sentence at most.
+const MESSAGE: usize = 262_144;
 
 /// What the TTS stream sends besides audio; anything else (`start`, …) is skipped.
 #[derive(Debug, Deserialize)]
@@ -61,7 +66,11 @@ impl Speech for TtsSpeech {
             .append_pair("format", "f32")
             .extend_pairs(request.lang.map(|lang| ("lang", lang.code())))
             .extend_pairs(request.voice.as_deref().map(|voice| ("voice", voice)));
-        let (mut socket, _) = tokio::time::timeout(CONNECT, tokio_tungstenite::connect_async(url.as_str()))
+        let config = WebSocketConfig::default()
+            .max_message_size(Some(MESSAGE))
+            .max_frame_size(Some(MESSAGE));
+        let connect = tokio_tungstenite::connect_async_with_config(url.as_str(), Some(config), false);
+        let (mut socket, _) = tokio::time::timeout(CONNECT, connect)
             .await
             .map_err(|_| SpeechError::Connect(format!("no handshake within {} s", CONNECT.as_secs())))?
             .map_err(|error| SpeechError::Connect(error.to_string()))?;

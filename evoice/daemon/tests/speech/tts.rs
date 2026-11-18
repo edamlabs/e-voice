@@ -349,3 +349,20 @@ async fn test_a_ready_rate_at_the_bound_is_accepted() {
     assert_eq!(error, None);
     assert_eq!(frames[0].rate.get(), 384_000);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_binary_message_over_256_kib_is_a_protocol_error_and_one_just_under_is_a_frame() {
+    let flat = |samples: usize| floats(&vec![0.25; samples]);
+    let server = Scripted::start(vec![text(READY), flat(60_000), text(CLOSED)]).await;
+    let (frames, error) = drain(&server.url(), request("x")).await;
+    assert_eq!((frames.len(), frames[0].samples.len(), error), (1, 60_000, None));
+    let error = fail(vec![text(READY), flat(70_000)]).await;
+    assert!(matches!(error, SpeechError::Protocol(_)), "{error:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_a_text_message_over_256_kib_is_a_protocol_error() {
+    let big = format!(r#"{{"type":"something-new","pad":"{}"}}"#, "a".repeat(270_000));
+    let error = fail(vec![text(READY), text(&big)]).await;
+    assert!(matches!(error, SpeechError::Protocol(_)), "{error:?}");
+}

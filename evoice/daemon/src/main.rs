@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 use e_voice_core::logger::{Logger, LoggerError};
@@ -7,9 +8,13 @@ use e_voice_core::settings::SettingsError;
 use e_voice_daemon::api::server::{Server, ServerError};
 use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::core::settings::Settings;
+use e_voice_daemon::hearing::stt::SttHearing;
 use e_voice_daemon::speech::tts::TtsSpeech;
 use e_voice_daemon::workflow::audio::AudioThread;
+use e_voice_daemon::workflow::capture::CaptureThread;
+use e_voice_daemon::workflow::listen::Listener;
 use e_voice_daemon::workflow::queue::SpeechQueue;
+use e_voice_device::capture::cpal::CpalCapture;
 use e_voice_device::playback::cpal::CpalPlayback;
 
 #[derive(Debug, thiserror::Error)]
@@ -73,7 +78,16 @@ impl Cli {
                     CpalPlayback::open(output.as_deref(), |error| tracing::error!(%error, "speaker.failed"))
                 });
                 let speech = SpeechQueue::start(TtsSpeech::new(settings.daemon.tts.clone()), audio);
-                Server::serve(&settings, AppState { speech }, Self::run_shutdown()).await?;
+                let input = settings.daemon.input.clone();
+                let capture = CaptureThread::new(move |deliver| {
+                    let capture = CpalCapture::open(input.as_deref(), deliver, |error| {
+                        tracing::error!(%error, "microphone.failed");
+                    })?;
+                    Ok(Box::new(capture))
+                });
+                let hearing = SttHearing::new(settings.daemon.stt.clone());
+                let listen = Arc::new(Listener::new(hearing, capture, settings.daemon.listen));
+                Server::serve(&settings, AppState { speech, listen }, Self::run_shutdown()).await?;
             }
         }
         Ok(())

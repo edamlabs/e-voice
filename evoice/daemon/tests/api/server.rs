@@ -14,6 +14,7 @@ use crate::http::{free_port, request, wait_ready};
 fn state() -> AppState {
     AppState {
         speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
+        listen: crate::fake::idle(),
     }
 }
 

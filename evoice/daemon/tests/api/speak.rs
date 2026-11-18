@@ -16,6 +16,7 @@ fn json(body: &str) -> Value {
 async fn daemon(speech: FakeSpeech, device: &Device) -> (Running, AppState) {
     let state = AppState {
         speech: queue(speech, device),
+        listen: crate::fake::idle(),
     };
     (Running::start(state.clone()).await, state)
 }

@@ -21,6 +21,7 @@ mod fake;
 mod flac;
 mod frames;
 mod health;
+mod hearing;
 mod lifespan;
 mod rate;
 #[allow(dead_code)]

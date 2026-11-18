@@ -9,7 +9,9 @@
 
 mod audio;
 mod backpressure;
+mod capture;
 #[path = "../fake/mod.rs"]
 mod fake;
+mod listen;
 mod queue;
 mod stop;

@@ -37,6 +37,7 @@ nav = [
     { "2026-10 · backends benchmark" = "history/2026-10-backends/index.md" },
     { "2026-10 · CPU benchmark" = "history/2026-10-benchmark.md" },
     { "2026-10 · TTS" = "history/2026-10-tts.md" },
+    { "2026-11 · diarization bench" = "history/2026-11-diarization.md" },
   ] },
 ]
 

@@ -5,6 +5,7 @@ use e_voice_core::settings::{Foreign, Settings as Loader, SettingsError};
 use serde::{Deserialize, Serialize};
 
 use crate::config::daemon::DaemonConfig;
+use crate::workflow::listen::LONGEST;
 
 /// The daemon's contract over the shared `evoice.toml` (e.g. `EVOICE_DAEMON__PORT=5701`). Every table
 /// rejects unknown keys; `[stt]` and `[tts]` belong to the services.
@@ -21,14 +22,25 @@ impl Settings {
     // ##### PRIVATE #####
 
     /// Clients find the daemon by its port, so the OS may not pick one; the WebSocket client is built
-    /// without TLS, so `wss://` would only fail at the first request.
-    fn validate_rules(&self) -> [(bool, &'static str, &'static str); 2] {
+    /// without TLS, so `wss://` would only fail at the first request; the default listen is one the
+    /// listener accepts.
+    fn validate_rules(&self) -> [(bool, &'static str, &'static str); 4] {
         [
             (self.daemon.port >= 1, "daemon.port", "must be at least 1"),
             (
                 self.daemon.tts.starts_with("ws://"),
                 "daemon.tts",
                 "must be a ws:// URL (TLS is not built in)",
+            ),
+            (
+                self.daemon.stt.starts_with("ws://"),
+                "daemon.stt",
+                "must be a ws:// URL (TLS is not built in)",
+            ),
+            (
+                !self.daemon.listen.is_zero() && self.daemon.listen <= LONGEST,
+                "daemon.listen",
+                "must be above zero and at most 300 s",
             ),
         ]
     }

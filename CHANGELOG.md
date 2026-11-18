@@ -34,12 +34,13 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     segments to the ASR deadline (`Timeout`). Its ASR and SER deadlines and its stall limit are now absent, as its
     overload policy; live audio keeps them all. Evidence: `test_file_transcribe_waits_past_the_asr_deadline` red
     (12 of 12) then green.
-- Diarization choices for the embedding bench (TODO_vehicle step 3): `embedding` (`wespeaker-resnet34-lm` default,
-  `campplus-zh-en`, `eres2net-voxceleb`) and `precision` (`fp32` default, `int8`). No default changes until the
-  bench decides.
-
-### Changed
-
+- Diarization choices (TODO_vehicle step 3): `embedding` (`wespeaker-resnet34-lm` default, `campplus-zh-en`,
+  `eres2net-voxceleb`) and `precision` (`fp32` default, `int8`). Bench on 12 held-out VoxConverse files, each arm
+  at its tuned threshold: DER 0.373 for the default, 0.179 for CAM++, 0.141 for ERes2Net (both better by more than
+  the registered 0.02, paired intervals above 0.10), int8 no different. The default does not change, and no
+  setting is validated for Spanish: on a real 61-min meeting of 9 to 13 speakers the tuned thresholds find 35 to
+  49 and the untuned default 24, one of them holding 52 % of the speech. Report:
+  `docs/history/2026-11-diarization.md`.
 - Home: <https://github.com/edamlabs/e-voice>, documentation <https://edamlabs.github.io/e-voice/>; the old
   `damvolkov/e-voice` URLs redirect.
 - Images move with the owner and drop the dash, from the next release: `ghcr.io/edamlabs/evoice-stt`,
