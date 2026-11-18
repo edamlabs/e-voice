@@ -4,12 +4,11 @@ use crate::fake::{Device, FakeSpeech, queue};
 use crate::running::Running;
 
 fn state(device: &Device) -> AppState {
-    AppState {
-        speech: queue(FakeSpeech::marked(), device),
-        listen: crate::fake::idle(),
-        events: crate::fake::bus(),
-        subscribers: crate::fake::pool(),
-    }
+    crate::fake::state(
+        queue(FakeSpeech::marked(), device),
+        crate::fake::idle(),
+        crate::fake::bus(),
+    )
 }
 
 #[tokio::test(flavor = "multi_thread")]

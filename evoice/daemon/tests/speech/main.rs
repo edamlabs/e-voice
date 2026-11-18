@@ -8,3 +8,4 @@
 
 mod scripted;
 mod tts;
+mod voices;

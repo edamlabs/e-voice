@@ -33,15 +33,22 @@ pub async fn speak(State(state): State<AppState>, Json(body): Json<SpeakBody>) -
     match state.speech.say(request).await {
         Ok((id, outcome)) => (StatusCode::OK, Json(json!({"id": id, "outcome": outcome}))).into_response(),
         Err(error) => {
-            let status = match &error {
-                SpeakError::Empty | SpeakError::TooLong(_) => StatusCode::BAD_REQUEST,
-                SpeakError::Full => StatusCode::TOO_MANY_REQUESTS,
-                SpeakError::Speech(_) => StatusCode::BAD_GATEWAY,
-                SpeakError::Device(_) => StatusCode::SERVICE_UNAVAILABLE,
-                SpeakError::Stopped => StatusCode::INTERNAL_SERVER_ERROR,
-            };
             let body = json!({"outcome": "failed", "error": error.to_string()});
-            (status, Json(body)).into_response()
+            (error.status(), Json(body)).into_response()
+        }
+    }
+}
+
+impl SpeakError {
+    /// The HTTP status of each failure: the one vocabulary every door answers with, MCP included.
+    #[must_use]
+    pub const fn status(&self) -> StatusCode {
+        match self {
+            Self::Empty | Self::TooLong(_) => StatusCode::BAD_REQUEST,
+            Self::Full => StatusCode::TOO_MANY_REQUESTS,
+            Self::Speech(_) => StatusCode::BAD_GATEWAY,
+            Self::Device(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Stopped => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

@@ -21,6 +21,8 @@ axum = { version = "0.8.9", features = ["ws"] }
 clap = { version = "4.6.7", features = ["derive"] }
 futures-util = "0.3.34"
 humantime-serde = "1.1.1"
+reqwest = { version = "0.13.5", default-features = false }
+rmcp = { version = "3.11.0", default-features = false, features = ["server", "macros", "transport-streamable-http-server"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 thiserror = "2.0.21"
@@ -34,6 +36,7 @@ tungstenite = "0.29.0"
 url = "2.5.8"
 
 [dev-dependencies]
+rmcp = { version = "3.11.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
 tokio = { version = "1.53.1", features = ["test-util"] }
 
 [lints]

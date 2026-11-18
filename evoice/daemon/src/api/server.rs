@@ -36,6 +36,7 @@ impl Server {
             .route("/listen", post(listen))
             .route("/stop", post(stop))
             .route("/events", get(events))
+            .nest_service("/mcp", state.mcp.clone().service())
             .with_state(state)
     }
 

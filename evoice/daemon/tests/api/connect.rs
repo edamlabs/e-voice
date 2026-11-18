@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::speech::tts::TtsSpeech;
 use e_voice_daemon::workflow::queue::SpeechQueue;
 use futures_util::{SinkExt, StreamExt};
@@ -46,12 +45,11 @@ async fn stalling_then_working() -> String {
 async fn test_a_service_that_never_answers_the_handshake_is_a_502_within_the_bound_and_the_queue_moves_on() {
     let url = stalling_then_working().await;
     let device = Device::new(0, 0);
-    let state = AppState {
-        speech: SpeechQueue::start(TtsSpeech::new(url), device.thread(), crate::fake::bus()),
-        listen: crate::fake::idle(),
-        events: crate::fake::bus(),
-        subscribers: crate::fake::pool(),
-    };
+    let state = crate::fake::state(
+        SpeechQueue::start(TtsSpeech::new(url), device.thread(), crate::fake::bus()),
+        crate::fake::idle(),
+        crate::fake::bus(),
+    );
     let daemon = Running::start(state).await;
     let started = Instant::now();
     let (status, body) = daemon.speak(r#"{"text":"hola"}"#).await;
@@ -99,16 +97,15 @@ async fn announcing(rate: u64) -> String {
 async fn test_a_service_announcing_an_absurd_rate_is_a_502_naming_it_and_the_daemon_lives() {
     for rate in [4_294_967_295u64, 384_001, 0] {
         let device = Device::new(0, 0);
-        let state = AppState {
-            speech: SpeechQueue::start(
+        let state = crate::fake::state(
+            SpeechQueue::start(
                 TtsSpeech::new(announcing(rate).await),
                 device.thread(),
                 crate::fake::bus(),
             ),
-            listen: crate::fake::idle(),
-            events: crate::fake::bus(),
-            subscribers: crate::fake::pool(),
-        };
+            crate::fake::idle(),
+            crate::fake::bus(),
+        );
         let daemon = Running::start(state).await;
         let (status, body) = daemon.speak(r#"{"text":"hola"}"#).await;
         assert_eq!(status, 502, "rate {rate}: {body}");

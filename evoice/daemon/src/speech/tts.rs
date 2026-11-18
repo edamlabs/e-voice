@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::time::Duration;
 
 use e_voice_core::audio::MAX_RATE;
+use futures_util::future::BoxFuture;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -12,7 +13,7 @@ use tokio_tungstenite::tungstenite::{Error as SocketError, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
 
-use crate::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
+use crate::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance, Voices};
 
 /// The longest a connect plus WebSocket handshake may take. The service is local, so seconds is already
 /// generous; past it the host is dead or black-holed, and the queue must move on rather than wait out the
@@ -22,6 +23,16 @@ const CONNECT: Duration = Duration::from_secs(5);
 /// The largest message or frame read from the service: 256 KiB. Audio comes one 80 ms frame at a time, at
 /// most 120 KiB at the highest rate accepted (`MAX_RATE`, f32); events are JSON of one sentence at most.
 const MESSAGE: usize = 262_144;
+
+/// The largest voice list read from the service: 64 KiB, thousands of ids. Read chunk by chunk, so a
+/// broken service cannot make the daemon buffer more.
+const LIST: usize = 65_536;
+
+/// The service's voice list: `{"voices": ["id", …]}`.
+#[derive(Debug, Deserialize)]
+struct VoiceList {
+    voices: Vec<String>,
+}
 
 /// What the TTS stream sends besides audio; anything else (`start`, …) is skipped.
 #[derive(Debug, Deserialize)]
@@ -53,6 +64,48 @@ impl TtsSpeech {
     #[must_use]
     pub fn new(url: impl Into<String>) -> Self {
         Self { url: url.into() }
+    }
+}
+
+impl TtsSpeech {
+    // ##### PRIVATE #####
+
+    /// `GET /v1/voices` on the service's HTTP side: the same host and port as its WebSocket base. Connect
+    /// and the whole answer are bounded by [`CONNECT`]; the body by [`LIST`].
+    async fn list_fetch(&self) -> Result<Vec<String>, SpeechError> {
+        let connect = |error: reqwest::Error| SpeechError::Connect(error.to_string());
+        let mut url = Url::parse(&format!("{}/v1/voices", self.url.trim_end_matches('/')))
+            .map_err(|error| SpeechError::Connect(error.to_string()))?;
+        url.set_scheme("http")
+            .map_err(|()| SpeechError::Connect(format!("{} has no HTTP form", self.url)))?;
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT)
+            .build()
+            .map_err(connect)?;
+        let mut response = http.get(url).timeout(CONNECT).send().await.map_err(connect)?;
+        let status = response.status();
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(connect)? {
+            let size = body.len().saturating_add(chunk.len());
+            (size <= LIST)
+                .then_some(())
+                .ok_or_else(|| SpeechError::Protocol(format!("a voice list over {LIST} bytes")))?;
+            body.extend_from_slice(&chunk);
+        }
+        let text = String::from_utf8_lossy(&body);
+        status
+            .is_success()
+            .then_some(())
+            .ok_or_else(|| SpeechError::Server(format!("{status}: {text}")))?;
+        serde_json::from_str::<VoiceList>(&text)
+            .map(|list| list.voices)
+            .map_err(|error| SpeechError::Protocol(error.to_string()))
+    }
+}
+
+impl Voices for TtsSpeech {
+    fn list(&self) -> BoxFuture<'_, Result<Vec<String>, SpeechError>> {
+        Box::pin(self.list_fetch())
     }
 }
 

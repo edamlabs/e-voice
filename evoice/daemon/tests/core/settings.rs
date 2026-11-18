@@ -173,3 +173,32 @@ fn test_the_example_file_loads_and_its_daemon_block_is_the_code_defaults() {
     assert_eq!(settings.daemon, DaemonConfig::default());
     assert_eq!(settings.server, ServerConfig::default());
 }
+
+#[test]
+fn test_the_voices_table_is_read_from_the_daemon_table_and_empty_by_default() {
+    assert!(Settings::default().daemon.voices.is_empty());
+    let loaded = load(
+        "voices",
+        "[daemon.voices]\nlens = \"narrator\"\n\"claude-code\" = \"ef_dora\"\n",
+    )
+    .unwrap();
+    let table: Vec<(&str, &str)> = loaded
+        .daemon
+        .voices
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(table, [("claude-code", "ef_dora"), ("lens", "narrator")]);
+    assert_eq!(loaded.daemon.port, 5700);
+}
+
+#[test]
+fn test_a_voices_table_that_is_not_names_to_names_is_refused() {
+    for text in [
+        "[daemon.voices]\nlens = 3\n",
+        "[daemon]\nvoices = \"narrator\"\n",
+        "[daemon]\nvoices = [\"a\"]\n",
+    ] {
+        assert!(load("badvoices", text).is_err(), "{text}");
+    }
+}

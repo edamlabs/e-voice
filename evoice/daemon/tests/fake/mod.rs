@@ -1,6 +1,6 @@
 #![allow(dead_code, clippy::cast_precision_loss)]
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -640,28 +640,86 @@ pub struct Wired {
     pub device: Device,
     pub hearing: FakeHearing,
     pub mic: Mic,
+    pub voices: FakeVoices,
 }
 
 pub fn wired(speech: FakeSpeech, device: Device, listen: Duration) -> Wired {
+    wired_with(speech, device, listen, FakeVoices::default(), BTreeMap::new())
+}
+
+pub fn wired_with(
+    speech: FakeSpeech,
+    device: Device,
+    listen: Duration,
+    voices: FakeVoices,
+    table: BTreeMap<String, String>,
+) -> Wired {
     let events = bus();
     let (hearing, mic) = (FakeHearing::default(), Mic::default());
-    let state = e_voice_daemon::api::state::AppState {
-        speech: SpeechQueue::start(speech, device.thread(), events.clone()),
-        listen: Arc::new(e_voice_daemon::workflow::listen::Listener::new(
-            hearing.clone(),
-            mic.thread(),
-            listen,
-            events.clone(),
-        )),
-        events: events.clone(),
-        subscribers: pool(),
-    };
+    let queue = SpeechQueue::start(speech, device.thread(), events.clone());
+    let listener: Arc<dyn Listen> = Arc::new(e_voice_daemon::workflow::listen::Listener::new(
+        hearing.clone(),
+        mic.thread(),
+        listen,
+        events.clone(),
+    ));
+    let state = state_with(queue, listener, events.clone(), voices.clone(), table);
     Wired {
         state,
         events,
         device,
         hearing,
         mic,
+        voices,
+    }
+}
+
+/// A scripted voice list.
+#[derive(Debug, Clone)]
+pub struct FakeVoices {
+    pub answer: Arc<Mutex<Result<Vec<String>, SpeechError>>>,
+    pub calls: Arc<AtomicUsize>,
+}
+
+impl Default for FakeVoices {
+    fn default() -> Self {
+        Self {
+            answer: Arc::new(Mutex::new(Ok(vec!["ef_dora".to_owned(), "em_alex".to_owned()]))),
+            calls: Arc::default(),
+        }
+    }
+}
+
+impl e_voice_daemon::speech::base::Voices for FakeVoices {
+    fn list(&self) -> BoxFuture<'_, Result<Vec<String>, SpeechError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let answer = self.answer.lock().unwrap().clone();
+        Box::pin(async move { answer })
+    }
+}
+
+pub fn state(
+    speech: SpeechQueue,
+    listen: Arc<dyn Listen>,
+    events: broadcast::Sender<DaemonEvent>,
+) -> e_voice_daemon::api::state::AppState {
+    state_with(speech, listen, events, FakeVoices::default(), BTreeMap::new())
+}
+
+pub fn state_with(
+    speech: SpeechQueue,
+    listen: Arc<dyn Listen>,
+    events: broadcast::Sender<DaemonEvent>,
+    voices: FakeVoices,
+    table: BTreeMap<String, String>,
+) -> e_voice_daemon::api::state::AppState {
+    let mcp = e_voice_daemon::mcp::server::McpServer::new(speech.clone(), Arc::clone(&listen), Arc::new(voices), table);
+    e_voice_daemon::api::state::AppState {
+        speech,
+        listen,
+        events,
+        subscribers: pool(),
+        mcp,
     }
 }
 

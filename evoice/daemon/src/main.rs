@@ -10,10 +10,12 @@ use e_voice_daemon::api::server::{Server, ServerError};
 use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::core::settings::Settings;
 use e_voice_daemon::hearing::stt::SttHearing;
+use e_voice_daemon::mcp::server::McpServer;
+use e_voice_daemon::speech::base::Voices;
 use e_voice_daemon::speech::tts::TtsSpeech;
 use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::CaptureThread;
-use e_voice_daemon::workflow::listen::Listener;
+use e_voice_daemon::workflow::listen::{Listen, Listener};
 use e_voice_daemon::workflow::queue::SpeechQueue;
 use e_voice_device::capture::cpal::CpalCapture;
 use e_voice_device::playback::cpal::CpalPlayback;
@@ -78,6 +80,7 @@ impl Cli {
                     CpalPlayback::open(output.as_deref(), |error| tracing::error!(%error, "speaker.failed"))
                 });
                 let tts = TtsSpeech::new(settings.daemon.tts.clone());
+                let voices: Arc<dyn Voices> = Arc::new(tts.clone());
                 let speech = SpeechQueue::start(tts, audio, events.clone());
                 let input = settings.daemon.input.clone();
                 let capture = CaptureThread::new(move |deliver| {
@@ -88,13 +91,16 @@ impl Cli {
                 });
                 let hearing = SttHearing::new(settings.daemon.stt.clone());
                 let listener = Listener::new(hearing, capture, settings.daemon.listen, events.clone());
-                let listen = Arc::new(listener);
+                let listen: Arc<dyn Listen> = Arc::new(listener);
                 let subscribers = Arc::new(Semaphore::new(SUBSCRIBERS));
+                let table = settings.daemon.voices.clone();
+                let mcp = McpServer::new(speech.clone(), Arc::clone(&listen), voices, table);
                 let state = AppState {
                     speech,
                     listen,
                     events,
                     subscribers,
+                    mcp,
                 };
                 Server::serve(&settings, state, Self::run_shutdown(terminate)).await?;
             }

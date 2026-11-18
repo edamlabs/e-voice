@@ -47,15 +47,20 @@ pub async fn listen(State(state): State<AppState>, body: Bytes) -> Response {
     };
     match state.listen.listen(timeout).await {
         Ok(heard) => (StatusCode::OK, Json(heard)).into_response(),
-        Err(error) => {
-            let status = match &error {
-                ListenError::Invalid(_) => StatusCode::BAD_REQUEST,
-                ListenError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
-                ListenError::Busy => StatusCode::CONFLICT,
-                ListenError::Hearing(_) => StatusCode::BAD_GATEWAY,
-                ListenError::Device(_) => StatusCode::SERVICE_UNAVAILABLE,
-            };
-            refused(status, error.to_string())
+        Err(error) => refused(error.status(), error.to_string()),
+    }
+}
+
+impl ListenError {
+    /// The HTTP status of each failure: the one vocabulary every door answers with, MCP included.
+    #[must_use]
+    pub const fn status(&self) -> StatusCode {
+        match self {
+            Self::Invalid(_) => StatusCode::BAD_REQUEST,
+            Self::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
+            Self::Busy => StatusCode::CONFLICT,
+            Self::Hearing(_) => StatusCode::BAD_GATEWAY,
+            Self::Device(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }

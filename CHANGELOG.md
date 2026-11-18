@@ -22,9 +22,15 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     the table in the shared `evoice.toml`. A daemon that cannot install its SIGTERM handler does not start.
   - `ecli say | stop | listen`: thin clients of the daemon (`--url`, `ECLI_DAEMON_URL`); `listen --struct` prints
     text, language and emotion as one JSON line.
-  - Evidence: every endpoint proven against scripted TTS and STT servers and fake devices; `ldd evoiced` free of
-    sherpa-onnx and onnxruntime; `make coverage` 91.23 % lines. Not proven: no real speaker or microphone has been
-    heard through it — no test can.
+  - MCP at `/mcp` (TODO_vehicle step 8): the tools `speak`, `stop`, `listen` and `list_voices` on the same queue
+    and listener as the HTTP doors, so ids, limits and `/events` are shared. Stateless, served to clients of every
+    protocol version; a body of at most 64 KiB; a loopback Host only. `[daemon.voices]` gives a registration its
+    own voice, keyed by the `X-Evoice-Client` header — a preference, never a permission.
+    `claude mcp add --transport http evoice http://127.0.0.1:5700/mcp --header "X-Evoice-Client: <name>"`.
+    The MCP SDK takes the stripped binary from 6.8 to 11.3 MB.
+  - Evidence: every endpoint proven against scripted TTS and STT servers and fake devices, the MCP tools with a
+    real client; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage` 91.32 % lines. Not proven: no
+    real speaker or microphone has been heard through it, and no Claude Code session has called the tools.
 - `evoice/device`: the microphone and speaker code of `ecli` as a library; `ecli`'s commands and output are
   byte-identical. `evoice/core` gains an `engine` feature (on by default) so a crate can use its settings, logging
   and resampling without linking the model runtime.

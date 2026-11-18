@@ -12,12 +12,11 @@ use crate::fake::{Device, FakeSpeech, queue};
 use crate::http::{free_port, request, wait_ready};
 
 fn state() -> AppState {
-    AppState {
-        speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
-        listen: crate::fake::idle(),
-        events: crate::fake::bus(),
-        subscribers: crate::fake::pool(),
-    }
+    crate::fake::state(
+        queue(FakeSpeech::marked(), &Device::new(0, 0)),
+        crate::fake::idle(),
+        crate::fake::bus(),
+    )
 }
 
 fn on(port: u16) -> Settings {

@@ -125,3 +125,8 @@ stt = "ws://127.0.0.1:5500"                  # STT service's WebSocket base (ws:
 # output = "…"                               # output device by a part of its name; system default when absent
 # input = "…"                                # input device by a part of its name; system default when absent
 listen = "15s"                               # wait for someone to start speaking; POST /listen may override, at most 300s
+                                             # MCP: a client's voice when a call names none, keyed by the
+                                             # X-Evoice-Client header it is registered with (works for every client);
+                                             # its declared name counts only when each request carries it (2026-07-28+)
+[daemon.voices]
+# lens = "narrator"

@@ -3,7 +3,6 @@ use std::net::{Ipv4Addr, TcpStream};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::hearing::base::{HearingError, Recognized};
 use e_voice_daemon::workflow::listen::{ListenError, Listener};
 use e_voice_device::error::DeviceError;
@@ -20,29 +19,27 @@ fn json(body: &str) -> Value {
 
 async fn with(listen: FakeListen) -> (Running, Arc<std::sync::Mutex<Vec<Option<Duration>>>>) {
     let calls = Arc::clone(&listen.calls);
-    let state = AppState {
-        speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
-        listen: Arc::new(listen),
-        events: crate::fake::bus(),
-        subscribers: crate::fake::pool(),
-    };
+    let state = crate::fake::state(
+        queue(FakeSpeech::marked(), &Device::new(0, 0)),
+        Arc::new(listen),
+        crate::fake::bus(),
+    );
     (Running::start(state).await, calls)
 }
 
 async fn real() -> (Running, FakeHearing, Mic) {
     let (hearing, mic) = (FakeHearing::default(), Mic::default());
     let events = crate::fake::bus();
-    let state = AppState {
-        speech: queue(FakeSpeech::marked(), &Device::new(0, 0)),
-        listen: Arc::new(Listener::new(
+    let state = crate::fake::state(
+        queue(FakeSpeech::marked(), &Device::new(0, 0)),
+        Arc::new(Listener::new(
             hearing.clone(),
             mic.thread(),
             Duration::from_millis(300),
             events.clone(),
         )),
         events,
-        subscribers: crate::fake::pool(),
-    };
+    );
     (Running::start(state).await, hearing, mic)
 }
 
