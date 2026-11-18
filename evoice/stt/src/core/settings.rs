@@ -11,13 +11,15 @@ use crate::config::ww::{WwBackend, WwConfig};
 
 /// The STT service contract over the shared `evoice.toml` (e.g. `EVOICE_STT__PIPELINE__ASR__CHUNK=560ms`).
 /// Every closed choice is an enum and every table rejects unknown keys; values are then range-checked,
-/// so a configuration that cannot run never starts. `[tts]` belongs to the TTS service.
+/// so a configuration that cannot run never starts. `[tts]` belongs to the TTS service, `[daemon]` to
+/// the daemon.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub server: ServerConfig,
     pub stt: SttConfig,
     pub tts: Foreign,
+    pub daemon: Foreign,
 }
 
 impl Settings {

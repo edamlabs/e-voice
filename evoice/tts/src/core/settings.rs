@@ -8,14 +8,15 @@ use crate::config::tts::TtsConfig;
 use crate::core::voices::VoiceStore;
 
 /// The TTS service contract over the shared `evoice.toml` (e.g. `EVOICE_TTS__SYNTH__WORKERS=8`);
-/// `[stt]` belongs to the STT service. Values are range-checked, so a configuration that cannot run
-/// never starts.
+/// `[stt]` belongs to the STT service, `[daemon]` to the daemon. Values are range-checked, so a
+/// configuration that cannot run never starts.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub server: ServerConfig,
     pub stt: Foreign,
     pub tts: TtsConfig,
+    pub daemon: Foreign,
 }
 
 impl Settings {

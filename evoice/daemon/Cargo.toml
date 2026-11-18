@@ -1,0 +1,27 @@
+[package]
+name = "e-voice-daemon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+description = "e-voice daemon: the one local process every voice client talks to, on :5700"
+license = "MIT"
+build = "../core/link.rs"
+
+[lib]
+name = "e_voice_daemon"
+
+[[bin]]
+name = "evoiced"
+path = "src/main.rs"
+
+[dependencies]
+e-voice-core = { path = "../core", default-features = false }
+axum = "0.8.9"
+clap = { version = "4.6.7", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tracing = "0.1.44"
+
+[lints]
+workspace = true

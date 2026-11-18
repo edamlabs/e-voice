@@ -1,8 +1,10 @@
 pub mod audio;
 pub mod config;
 pub mod logger;
+#[cfg(feature = "engine")]
 pub mod models;
 pub mod probe;
+#[cfg(feature = "engine")]
 pub mod runtime;
 pub mod schema;
 pub mod settings;

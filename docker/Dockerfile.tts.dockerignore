@@ -17,3 +17,7 @@
 !evoice/tts/src/
 !cli/Cargo.toml
 !cli/src/
+!evoice/device/Cargo.toml
+!evoice/device/src/
+!evoice/daemon/Cargo.toml
+!evoice/daemon/src/

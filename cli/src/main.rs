@@ -4,8 +4,6 @@
     clippy::cast_sign_loss
 )]
 
-mod mic;
-mod speaker;
 mod stt;
 mod tts;
 mod wav;
@@ -13,8 +11,8 @@ mod wav;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use e_voice_device::host::CpalHost;
 
-use crate::mic::Mic;
 use crate::stt::{SttArgs, SttError};
 use crate::tts::{TtsArgs, TtsError};
 
@@ -49,7 +47,7 @@ async fn main() -> ExitCode {
     let outcome = match Cli::parse().command {
         CliCommand::Stt(args) => args.run().await.map_err(CliError::from),
         CliCommand::Tts(args) => args.run().await.map_err(CliError::from),
-        CliCommand::Devices => Mic::devices()
+        CliCommand::Devices => CpalHost::inputs()
             .map_err(|error| CliError::from(SttError::from(error)))
             .map(|devices| {
                 for (name, chosen) in devices {

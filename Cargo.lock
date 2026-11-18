@@ -935,6 +935,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "e-voice-daemon"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "e-voice-core",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "e-voice-device"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "e-voice-stt"
 version = "0.1.0"
 dependencies = [
@@ -1007,7 +1028,7 @@ name = "ecli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "cpal",
+ "e-voice-device",
  "futures-util",
  "hound",
  "serde_json",

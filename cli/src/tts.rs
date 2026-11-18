@@ -1,15 +1,17 @@
 use std::fmt::Write;
 use std::io::BufRead;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use clap::Args;
+use e_voice_device::error::DeviceError;
+use e_voice_device::playback::base::Playback;
+use e_voice_device::playback::cpal::CpalPlayback;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
-
-use crate::speaker::{Speaker, SpeakerError};
 
 const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
@@ -17,7 +19,7 @@ const RESET: &str = "\x1b[0m";
 #[derive(Debug, thiserror::Error)]
 pub enum TtsError {
     #[error(transparent)]
-    Speaker(#[from] SpeakerError),
+    Device(#[from] DeviceError),
     #[error("wav: {0}")]
     Wav(#[from] hound::Error),
     #[error("websocket: {0}")]
@@ -76,7 +78,11 @@ impl TtsArgs {
         }
         let (socket, _) = tokio_tungstenite::connect_async(url.as_str()).await?;
         let (mut sink, mut source) = socket.split();
-        let speaker = if self.mute { None } else { Some(Speaker::open()?) };
+        let speaker = if self.mute {
+            None
+        } else {
+            Some(CpalPlayback::open(None, |error| eprintln!("ecli: speaker: {error}"))?)
+        };
         let (lines, mut typed) = mpsc::channel::<Option<String>>(16);
         match self.text.clone() {
             Some(text) => {
@@ -92,7 +98,7 @@ impl TtsArgs {
                 line = typed.recv() => {
                     let message = match line.flatten() {
                         Some(text) if text.trim().is_empty() => {
-                            speaker.iter().for_each(Speaker::clear);
+                            speaker.iter().for_each(CpalPlayback::clear);
                             json!({ "type": "cancel" })
                         }
                         Some(text) => {
@@ -112,7 +118,7 @@ impl TtsArgs {
                             .iter()
                             .map(|chunk| f32::from_le_bytes(*chunk))
                             .collect();
-                        if let Some(speaker) = &speaker {
+                        if let (Some(speaker), Some(rate)) = (&speaker, NonZeroU32::new(rate)) {
                             speaker.push(&samples, rate);
                         }
                         if let Some(writer) = recorder.as_mut() {
@@ -124,7 +130,7 @@ impl TtsArgs {
                         let field = |key: &str| event.get(key).cloned().unwrap_or_default();
                         match field("type").as_str().unwrap_or_default() {
                             "ready" => {
-                                rate = field("rate").as_u64().and_then(|rate| u32::try_from(rate).ok()).unwrap_or(rate);
+                                rate = field("rate").as_u64().and_then(|rate| u32::try_from(rate).ok()).filter(|rate| *rate > 0).unwrap_or(rate);
                                 recorder = self
                                     .out
                                     .as_ref()

@@ -19,7 +19,31 @@ use crate::fake::{
     FakeDenoise, FakeLid, FakeNamed, FakeStreaming, FakeWw, MARKER, SPEECH, batch, nodes, ser, slow, stratified,
 };
 
+const FAR: Duration = Duration::from_secs(3_600);
+
+/// Far limits: a test about ordering or content must not race a wall clock.
 fn config() -> PipelineConfig {
+    PipelineConfig {
+        tick: Duration::from_millis(10),
+        asr: AsrConfig {
+            deadline: FAR,
+            ..AsrConfig::default()
+        },
+        ser: SerConfig {
+            deadline: FAR,
+            min: Duration::ZERO,
+            ..SerConfig::default()
+        },
+        gate: GateConfig {
+            close: GateClose::Utterance,
+            idle: Duration::from_secs(5),
+        },
+        ..PipelineConfig::default()
+    }
+}
+
+/// Short wall-clock limits, for the tests whose subject is the limit itself.
+fn timed() -> PipelineConfig {
     PipelineConfig {
         tick: Duration::from_millis(10),
         asr: AsrConfig {
@@ -130,7 +154,7 @@ async fn test_streaming_feeds_from_speech_start_and_emits_partials() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_late_ser_falls_back_to_unknown() {
-    let runner = Runner::new(nodes(batch(0), Some(ser(400)), None), config());
+    let runner = Runner::new(nodes(batch(0), Some(ser(400)), None), timed());
     let events = drive(runner, audio(&[(SPEECH, 4_000), (0.0, 1_600)]), None).await;
     let done = finals(&events);
     assert_eq!(
@@ -448,7 +472,7 @@ async fn test_live_intake_still_times_out_past_the_asr_deadline() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_file_transcribe_keeps_the_real_emotion_of_a_late_ser() {
-    let runner = Runner::new(nodes(batch(0), Some(ser(400)), None), config());
+    let runner = Runner::new(nodes(batch(0), Some(ser(400)), None), timed());
     let transcript = runner
         .transcribe(Lang::Es, audio(&[(SPEECH, 4_000), (0.0, 1_600)]), Diarization::Skip)
         .await
