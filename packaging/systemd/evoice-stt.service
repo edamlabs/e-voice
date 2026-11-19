@@ -1,0 +1,17 @@
+[Unit]
+Description=e-voice STT: the speech-to-text gateway (:5500)
+Documentation=https://github.com/edamlabs/e-voice
+
+[Service]
+Environment=EVOICE_STT__OPS__DATA=%h/.config/evoice/stt
+Environment=EVOICE_STT__OPS__MANIFEST=@SHARE@/stt/models.toml
+ExecStartPre=mkdir -p %h/.config/evoice/stt
+ExecStartPre=cp -n @SHARE@/evoice.toml %h/.config/evoice/evoice.toml
+ExecStartPre=@BIN@/e-voice --config %h/.config/evoice/evoice.toml pull
+ExecStart=@BIN@/e-voice --config %h/.config/evoice/evoice.toml serve
+TimeoutStartSec=infinity
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

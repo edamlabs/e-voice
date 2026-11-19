@@ -1,16 +1,20 @@
 # Architecture
 
-Three crates in one workspace, independent but combinable:
+Six crates in one workspace, independent but combinable:
 
 | Crate | Is | Depends on |
 |---|---|---|
 | `core` (`e-voice-core`) | settings loader, model store, onnxruntime binding, audio decode/resample/AGC, logger, process probe, shared contracts (`Lang`, errors) | nothing of ours |
 | `stt` (`e-voice-stt`, binary `e-voice`, :5500) | speech-to-text pipeline and its gateway | `core` |
 | `tts` (`e-voice-tts`, binary `e-voice-tts`, :5600) | streaming text-to-speech and its gateway | `core` |
+| `device` (`e-voice-device`) | microphone capture and speaker playback over cpal (PulseAudio or PipeWire on Linux), the rubato resampler | nothing of ours |
+| `daemon` (`e-voice-daemon`, binary `evoiced`, 127.0.0.1:5700) | the process that owns the devices: speech queue, listener, recorder, voice conversation, MCP, hooks | `core` without its `engine` feature, `device` |
+| `cli` (`ecli`) | terminal client of the services and the daemon | `device` |
 
-Both services read the same `evoice.toml`: `[server]` is shared, each service types its own section and
-keeps the other's opaque. Both bind the same `libonnxruntime` (vendored with sherpa-onnx into
-`data/ops/sherpa`).
+The three binaries read the same `evoice.toml`: `[server]` is shared, each types its own section and keeps
+the others' opaque. The two services bind the same `libonnxruntime` (vendored with sherpa-onnx into
+`data/ops/sherpa`); the daemon links neither sherpa nor onnxruntime — `core`'s `engine` feature gates
+the runtime, the models and audio decoding.
 
 Hexagonal and event-driven. Every node is a port (a trait in `workflow/<node>/base.rs`) with one file per
 backend and a registry that maps configuration to a built backend. Backends are built once at startup
@@ -99,4 +103,48 @@ flowchart LR
 ## One onnxruntime
 
 sherpa-onnx and `ort` share one `libonnxruntime` in the process (`ort` binds dynamically to the library
-sherpa loaded). Thread spinning is disabled for both, so idle and paced streams cost no CPU.
+sherpa loaded). Thread spinning is disabled for both, so idle and paced streams cost no CPU. The process holds
+the `ort` environment for its whole life (`Runtime::environment`): `ort` tracks it only by a weak reference, so a
+dropped environment would destroy it under the sessions.
+
+## Diarization
+
+Speakers are a whole-file node beside the runner, not inside the `Session`: clustering needs the end of the
+file. For an upload, `workflow/diarize` (sherpa-onnx's offline pipeline: pyannote segmentation 3.0, an
+embedding model, clustering) runs concurrently with the transcription over the same shared samples, and a
+two-pointer sweep over the overlap gives each segment its majority speaker. Streaming responses leave `speaker`
+empty.
+
+## Daemon
+
+`evoiced` is a hexagon of its own, wired at one root in `main.rs`:
+
+```mermaid
+flowchart LR
+    ecli[ecli] & mcp[MCP clients] & hooks[Claude Code hooks] --> api[api · HTTP, WebSocket, /mcp]
+    api --> queue[speech queue]
+    api --> listener[listener]
+    api --> recorder[recorder]
+    api --> talk[conversation runner]
+    queue --> tts[TTS service · ws]
+    listener & recorder --> stt[STT service · ws]
+    queue --> out[(speaker)]
+    listener & recorder --> mic[(microphone lease)]
+    talk --> queue & listener
+    talk --> agent[headless Claude Code]
+    agent -. approve .-> api
+```
+
+- **One owner per device.** The microphone is a lease: `/listen`, a recording and a conversation take it in
+  turn, and a second taker answers 409. The speaker is one serial queue (16 deep, never more than 2 s of audio
+  ahead), so two texts never overlap.
+- **One stop.** `/stop` and the MCP `stop` tool call the same sequence: cut the voice at once, halt the
+  conversation's turn and wait for its acknowledgement (bounded), cut again. A halt counter fences every push of
+  the conversation to the queue, so a halted turn cannot queue anything afterwards.
+- **The conversation.** A runner is half-duplex: the microphone is closed while the agent thinks or speaks. The
+  agent is a headless Claude Code (`--strict-mcp-config`, `--setting-sources project`, a manual permission mode,
+  `--permission-prompt-tool mcp__evoice__approve`, only the tools named in `[daemon.talk.claude] tools`),
+  never loading the user's settings. Its replies are cut into sentences and queued as they complete; a
+  permission request is read aloud whole and faithfully or refused unasked, and answered with a yes or a no.
+- **Ports.** Everything the daemon touches — the speech service, the recognizer, the capture device, the
+  playback device, the voice store, the agent — sits behind a trait, so each behaviour is proven with fakes.

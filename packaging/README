@@ -1,0 +1,5 @@
+evoice @VERSION@ for Linux x86_64: STT and TTS services, voice daemon, CLI. Needs glibc >= @GLIBC@, libasound2, espeak-ng.
+Unpack: mkdir -p ~/.local/opt && tar xzf evoice-@VERSION@-linux-x86_64.tar.gz -C ~/.local/opt && ln -sfn evoice-@VERSION@-linux-x86_64 ~/.local/opt/evoice
+PATH: export PATH="$HOME/.local/opt/evoice/bin:$PATH" (bin/ runs from anywhere: it finds its libraries in ../lib).
+Units: mkdir -p ~/.config/systemd/user && cp ~/.local/opt/evoice/systemd/*.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+Start: systemctl --user enable --now evoice-stt evoice-tts evoiced (config: ~/.config/evoice/evoice.toml, copied from share/evoice/evoice.toml on first start).

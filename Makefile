@@ -28,6 +28,9 @@ ID ?=
 FILES ?=
 TEXT ?=
 DIST ?= data/ops/dist
+PACKAGE ?= data/ops/package
+PACKAGED = e-voice e-voice-tts evoiced ecli
+VERSION = $(patsubst v%,%,$(or $(E_VOICE_VERSION),$(patsubst full-v%,%,$(firstword $(shell git tag -l 'full-v*' --sort=-v:refname)))))
 TARGET = $(or $(CARGO_TARGET_DIR),data/ops/target)
 SUDO = $(if $(filter 0,$(shell id -u 2>/dev/null)),,sudo)
 KERNEL = $(firstword $(subst _, ,$(shell uname -s 2>/dev/null)))
@@ -39,7 +42,7 @@ HOST_MSYS = windows
 HOST_CYGWIN = windows
 PLATFORM = $(or $(filter ubuntu mac windows,$(OS)),$(HOST_$(KERNEL)))
 ARGS = $(filter-out $(firstword $(MAKECMDGOALS)),$(MAKECMDGOALS))
-.PHONY: help install system system-ubuntu system-mac system-windows toolchain tools hooks coverage sherpa setup export pocket neutts qwen3 voice speak tts annex gates release dist docs docs-serve wake datasets bench report serve stt image up down build fmt lint bounds test backends check
+.PHONY: help install system system-ubuntu system-mac system-windows toolchain tools hooks coverage sherpa setup export pocket neutts qwen3 voice speak tts annex gates release dist package docs docs-serve wake datasets bench report serve stt image up down build fmt lint bounds test backends check
 
 help:  ## list targets
 	@awk 'BEGIN{FS=":.*##"} /^[a-z][a-zA-Z0-9_-]*:.*##/{printf "  \033[32m%-9s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
@@ -159,6 +162,11 @@ build: sherpa  ## release build [PACKAGES="--package e-voice-stt"]
 dist: build  ## binaries + native libraries into DIST/{bin,lib} [PACKAGES=… BINS=… DIST=…]
 	@for bin in $(BINS); do install -D $(TARGET)/release/$$bin $(DIST)/bin/$$bin; done
 	@mkdir -p $(DIST)/lib && cp -a data/ops/sherpa/lib/. $(DIST)/lib/
+
+package:  ## .deb + tarball of every binary into data/ops/package [E_VOICE_VERSION=…, else the last full-v* tag; DIST=…]
+	@test -n "$(VERSION)" || { echo "package: no E_VOICE_VERSION and no full-v* tag"; exit 1; }
+	@E_VOICE_VERSION=$(VERSION) $(MAKE) dist BINS="$(PACKAGED)" PACKAGES=--workspace
+	@packaging/package.sh $(VERSION) $(DIST) $(PACKAGE) $(PACKAGED)
 
 fmt:  ## format the tree
 	@cargo fmt --all

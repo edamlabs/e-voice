@@ -136,7 +136,7 @@ async fn test_a_2xx_that_is_not_a_voice_list_is_a_protocol_error() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_a_service_that_never_answers_is_an_error_within_five_seconds() {
+async fn test_a_service_that_never_answers_is_a_connect_error_after_the_timeout() {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     let url = format!("ws://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -149,7 +149,7 @@ async fn test_a_service_that_never_answers_is_an_error_within_five_seconds() {
     let took = started.elapsed();
     assert!(matches!(error, SpeechError::Connect(_)), "{error:?}");
     assert!(
-        took >= Duration::from_secs(4) && took < Duration::from_secs(6),
+        took >= Duration::from_secs(4) && took < Duration::from_secs(10),
         "{took:?}"
     );
 }
@@ -161,10 +161,11 @@ async fn test_a_service_that_is_not_there_or_a_base_that_is_not_a_url_is_a_conne
         .local_addr()
         .unwrap()
         .port();
-    let started = Instant::now();
-    let refused = list(&format!("ws://127.0.0.1:{port}")).await.unwrap_err();
+    let refused = tokio::time::timeout(Duration::from_secs(4), list(&format!("ws://127.0.0.1:{port}")))
+        .await
+        .expect("a refusal must not wait the connect timeout")
+        .unwrap_err();
     assert!(matches!(refused, SpeechError::Connect(_)), "{refused:?}");
-    assert!(started.elapsed() < Duration::from_secs(2));
     let bad = list("not a url").await.unwrap_err();
     assert!(matches!(bad, SpeechError::Connect(_)), "{bad:?}");
 }

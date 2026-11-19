@@ -34,8 +34,8 @@
         "tags": [
           "openai"
         ],
-        "summary": "Speaks `input`, streaming audio while later sentences are still being generated.",
-        "description": "# Errors\nAn unsupported format or language, empty input, an unreadable default voice, or no free worker.",
+        "summary": "Speaks `input`, streaming audio while later sentences are still being generated. The answer is\nback-pressured by the client's reading, so memory is bounded by the runner's channels, not by the\ntext; [`INPUT`] bounds the work one request can ask for.",
+        "description": "# Errors\nA body over [`BODY`] or not valid JSON, an unsupported format or language, empty input or input over\n[`INPUT`] characters, an unreadable default voice, or no free worker.",
         "operationId": "speech",
         "requestBody": {
           "content": {
@@ -52,6 +52,26 @@
             "description": "audio bytes (wav, pcm or f32) or SSE `speech.audio.delta` events"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "a body over 64 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "JSON that is not a speech request",
             "content": {
               "application/json": {
                 "schema": {
@@ -332,6 +352,14 @@
         ],
         "description": "Client → server text frames."
       },
+      "DiarizeStage": {
+        "type": "string",
+        "description": "Where a whole-file diarization failed; the runtime reports no cause beyond the stage.",
+        "enum": [
+          "process",
+          "segments"
+        ]
+      },
       "ErrorBody": {
         "type": "object",
         "description": "Error body in the OpenAI shape: `{\"error\": {\"message\", \"type\"}}`.",
@@ -501,6 +529,24 @@
                 "type": "string",
                 "enum": [
                   "backend"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "detail",
+              "kind"
+            ],
+            "properties": {
+              "detail": {
+                "$ref": "#/components/schemas/DiarizeStage"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "diarize"
                 ]
               }
             }
@@ -710,7 +756,7 @@
           "seconds": {
             "type": "number",
             "format": "double",
-            "description": "Seconds of audio the voice was learned from."
+            "description": "Seconds of audio the voice was learned from: at most [`Prompt::LIMIT`], however long the clips."
           },
           "voice_id": {
             "type": "string"

@@ -272,3 +272,11 @@ fn test_ill_typed_talk_values_are_refused() {
         assert!(load("talktype", text).is_err(), "{text}");
     }
 }
+
+#[test]
+fn test_the_packaged_file_loads_and_leaves_the_daemon_defaults() {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packaging/evoice.toml")).unwrap();
+    let loaded = load("packaged", &text).unwrap();
+    assert_eq!(loaded.daemon, Settings::default().daemon);
+    assert_eq!(loaded.server, Settings::default().server);
+}

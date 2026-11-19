@@ -52,7 +52,7 @@ pub struct ListenParams {
     timeout_seconds: Option<u64>,
 }
 
-/// The daemon's MCP door: four tools on the very handles the HTTP doors hold, so ids, the queue's and the
+/// The daemon's MCP door: five tools on the very handles the HTTP doors hold, so ids, the queue's and the
 /// listener's limits and `/events` are shared by both. Stateless: nothing is kept between calls, so there
 /// is no session to bound; what is in flight is bounded by the queue and the listener themselves.
 #[derive(Debug, Clone)]

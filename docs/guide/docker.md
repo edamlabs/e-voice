@@ -40,7 +40,7 @@ Environment variables override any key (`EVOICE_<SECTION>__<KEY>`); compose pass
 `EVOICE_STT__LANG`. A full file can be mounted at `/app/evoice.toml`.
 
 ```bash
-EVOICE_PORT=5501 EVOICE_LANG=en make up
+EVOICE_PORT=5501 EVOICE_LANG=en make up        # MODE=full; in stt and tts modes the ports are EVOICE_STT_PORT and EVOICE_TTS_PORT
 ```
 
 ## TTS
@@ -54,6 +54,12 @@ Learned voices live in the `e-voice-tts` volume (`/data/tts/voices`), learned th
 
 `full` runs both binaries under tini (`docker/full.sh`): `pull` installs both model sets, `serve` starts
 both and stops the container when either exits; the healthcheck probes both ports.
+
+## The daemon is not in a container
+
+`evoiced` owns the host's microphone and speaker, so it runs on the host, beside the audio devices, and calls the
+containers over their published ports (`[daemon] stt` and `tts`). `ecli` is built into no image either. Both come
+with the [Ubuntu package](install.md#ubuntu-package) or from `make dist`.
 
 ## Published images
 

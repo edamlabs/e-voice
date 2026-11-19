@@ -10,8 +10,10 @@
   <img src="assets/e-voice-landscape.svg" alt="e-voice" height="110" />
 </p>
 
-CPU-first speech services in Rust — streaming STT with emotion on every segment, and streaming TTS that
-speaks in a learned voice, behind OpenAI-compatible APIs.
+CPU-first speech in Rust, all local — streaming STT with emotion and speakers, streaming TTS that speaks in a
+voice you record yourself, and a daemon that gives Claude Code a voice (MCP, hooks, a spoken conversation) —
+behind OpenAI, Deepgram and ElevenLabs compatible APIs. Install it as an Ubuntu package with systemd user units,
+or run the Docker images. What it is for: [docs/guide/uses.md](docs/guide/uses.md).
 
 Part of the **EDamLabs eager series**: EDamLabs' own e- products ([EDamLabs families](https://github.com/edamlabs/esteward#identity)).
 
@@ -21,7 +23,32 @@ One pipeline, every node swappable from config. Full documentation:
 ```
 audio ─▶ [denoise] ─▶ AGC ─▶ [ww] ─▶ VAD ─▶ [lid] ─▶ ASR (streaming partials) ─┬─▶ join ─▶ final {text, lang, emotion}
                                                                                └─▶ SER ─┘
+uploaded file ─▶ [diarize] ─ speakers per segment, beside the transcription
 ```
+
+## Install
+
+```bash
+gh release download full-v<version> -R edamlabs/e-voice -p 'evoice_*_amd64.deb'
+sudo apt install ./evoice_<version>_amd64.deb
+systemctl --user enable --now evoice-stt evoice-tts evoiced
+```
+
+Ubuntu 22.04 and later, x86_64, no GPU. Everything it writes lives under `~/.config/evoice/`; ports STT 5500, TTS
+5600, daemon 127.0.0.1:5700. Requirements and sizes: [docs/guide/requirements.md](docs/guide/requirements.md).
+
+## Claude Code with a voice
+
+```bash
+claude mcp add --transport http evoice http://127.0.0.1:5700/mcp
+ecli talk              # a spoken conversation with Claude Code; «adiós» ends it
+ecli voice add me      # read the text on screen: the TTS learns your voice
+```
+
+The daemon `evoiced` owns the microphone and the speaker: MCP tools (`speak`, `stop`, `listen`, `list_voices`),
+Claude Code hooks, dictation and the conversation. [docs/guide/daemon.md](docs/guide/daemon.md).
+
+## The speech-to-text nodes
 
 | Node | Backends | Runtime |
 |---|---|---|
@@ -31,6 +58,7 @@ audio ─▶ [denoise] ─▶ AGC ─▶ [ww] ─▶ VAD ─▶ [lid] ─▶ ASR
 | lid | `off` (default), `whisper` (tiny) | sherpa-onnx |
 | asr | streaming: `nemotron` 3.5 (live default), `kroko` (CC-BY-SA, research only) · per segment: `parakeet` TDT v3 (file default), `canary` 180M flash, `cohere` Transcribe, `whisper` turbo | sherpa-onnx |
 | ser | `emotion2vec` plus base (default), `emotion2vec-large` (local export), `off` | `ort` |
+| diarize | `off` (default), `sherpa` — pyannote segmentation 3.0 + WeSpeaker, uploaded files only | sherpa-onnx |
 
 Spanish and English; sherpa-onnx and `ort` share one `libonnxruntime.so`; no GPU.
 
@@ -46,7 +74,8 @@ text deltas ─▶ sentences ─▶ Pocket TTS (frame by frame, 80 ms) ─▶ PC
 | voices | learned from 10–30 s of audio (`e-voice-tts voice add <id> <files> [--text …]` or `POST /v1/voices`), stored backend-independent, used by id everywhere |
 | latency | first audio ≈ 70–120 ms on a warm stream; ≈ 3× real time per stream on 2 threads; `cancel` barges in within one frame |
 
-Three crates, independent but combinable: `core` (settings, model store, runtime, audio), `stt`, `tts`.
+Six crates in one workspace, independent but combinable: `core` (settings, model store, runtime, audio), `stt`,
+`tts`, `device` (microphone and speaker over cpal), `daemon` (`evoiced`) and `cli` (`ecli`).
 
 ## Quickstart
 
@@ -90,7 +119,8 @@ pkg-config, curl, bzip2, ALSA headers on Linux), `toolchain`, `tools`. The Docke
 `make hooks` — one definition of every step. Prebuilt sherpa-onnx libraries are pinned for
 linux-x64, macOS (universal2) and windows-x64; only Linux is exercised by CI.
 
-`ecli` and every client below point at `127.0.0.1:5500` either way.
+Clients point at `127.0.0.1:5500` (STT) and `:5600` (TTS) either way; `make stt` and `make tts` use the author's
+compose ports `45140` and `45150` unless `ECLI_STT_URL` and `ECLI_TTS_URL` say otherwise.
 
 ## API
 
@@ -171,15 +201,17 @@ One `evoice.toml` for both services, in the working directory (or `--config path
 ```
 [server]                     host, log (shared)
 [stt]                        lang
-[stt.api]                    port, upload, emotion
+[stt.api]                    port, upload, duration, emotion
 [stt.pipeline]               pending, overload, stall, tick, preroll, jobs, gate, gain
-[stt.pipeline.ww|vad|asr|ser|diarize] backend + its knobs
+[stt.pipeline.denoise|ww|vad|lid|asr|ser|diarize] backend + its knobs
 [stt.ops]                    data, manifest, verify
 [tts]                        lang, voice
 [tts.api]                    port, upload
 [tts.text]                   min, max (sentence sizes)
 [tts.synth]                  backend, size, threads, workers, temperature, steps, quantized
 [tts.ops]                    data, manifest, verify
+[daemon]                     host, port, tts, stt, output, input, listen, lang, voices
+[daemon.talk]                idle, turn, answer      [daemon.talk.claude]  bin, cwd, model, tools
 ```
 
 Choices are closed enums. An unknown backend, key or out-of-range value stops the service at startup.
@@ -207,8 +239,10 @@ evoice/                 the services and their shared core (Rust crates)
 ├── core/               crate e-voice-core: settings loader, model store, runtime, audio, logger, probe
 │   ├── link.rs         build script of every binary (rpath to data/ops/sherpa/lib, version)
 │   └── ops/sherpa.sh   vendors the pinned sherpa-onnx + onnxruntime libraries into data/ops/sherpa
+├── device/             crate e-voice-device: microphone capture and speaker playback (cpal)
+├── daemon/             crate e-voice-daemon, binary evoiced: speech queue, listener, recorder, conversation, MCP
 ├── stt/                speech to text (crate e-voice-stt, binary e-voice)
-│   ├── src/            api · config · core · schema · workflow (session, runner, ww/ vad/ asr/ ser/) · ops
+│   ├── src/            api · config · core · schema · workflow (session, runner, denoise/ ww/ vad/ lid/ asr/ ser/ diarize/) · ops
 │   ├── tests/          workflow, api, ops
 │   ├── ops/            bench.sh, bench/*.toml
 │   └── models.toml
@@ -217,7 +251,8 @@ evoice/                 the services and their shared core (Rust crates)
     ├── tests/          workflow (conformance, backends), api, ops
     ├── ops/            bench.sh, bench/*.toml
     └── models.toml
-cli/                    ecli: microphone → STT, TTS → speaker
+cli/                    ecli: stt, tts, devices, and the daemon's say, stop, listen, talk, voice
+packaging/              the Ubuntu .deb and tarball: control, systemd user units, default config
 docker/                 Dockerfile.{full,stt,tts} (+ .dockerignore each), compose.{full,stt,tts}.yml
 eval/                   Python (uv): dataset fetch, scoring, reports; export/ (model side only)
 docs/                   this site (Zensical); docs/history: dated decisions and measurements

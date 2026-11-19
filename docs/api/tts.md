@@ -4,6 +4,13 @@ The TTS service (`e-voice-tts serve`, port 5600) streams audio while it is gener
 first 80 ms chunk leaves about 70–120 ms after the text arrives on a warm stream (Qwen3: ≈ 0.4 s). Every endpoint takes a learned
 `voice` (see [Voices](../guide/voices.md)); without one, the configured default `tts.voice` speaks.
 
+## Service routes
+
+`GET /health` answers `{"status", "version", …}`; `GET /v1/models` answers `{"object":"list","data":[{"id",
+"object":"model","owned_by":"e-voice"}]}`, one entry per language model; `GET /openapi.json` and `GET /docs` are
+the generated reference. Voices: `GET /v1/voices`, `POST /v1/voices`, `DELETE /v1/voices/{voice_id}`
+([below](#voices-v1voices)). There are no Deepgram or ElevenLabs TTS routes.
+
 ## Native stream — `GET /v1/stream`
 
 WebSocket. Query: `lang` (`es`, `en`), `voice`, `format` (`pcm` s16le, default, or `f32`). The voice is

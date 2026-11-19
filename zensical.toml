@@ -10,12 +10,15 @@ copyright = "MIT · EDamLabs · e-voice, part of the eager (e-) series"
 nav = [
   { "Overview" = "index.md" },
   { "Guide" = [
+    { "What it is for" = "guide/uses.md" },
     { "Install" = "guide/install.md" },
+    { "Requirements" = "guide/requirements.md" },
     { "Docker" = "guide/docker.md" },
     { "Configuration" = "guide/configuration.md" },
     { "Clients" = "guide/clients.md" },
     { "Wake word" = "guide/wake.md" },
     { "Voices" = "guide/voices.md" },
+    { "Voice daemon" = "guide/daemon.md" },
     { "Claude Code" = "guide/claude.md" },
   ] },
   { "API" = [

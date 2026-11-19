@@ -68,7 +68,7 @@ offline = { backend = "parakeet", threads = 4, choices = [] }
 #                  (model, model_id): e.g. ["whisper", "cohere"]
 
 [stt.pipeline.ser]
-backend = "emotion2vec"                      # emotion2vec | off
+backend = "emotion2vec"                      # emotion2vec | emotion2vec-large (`make export`) | off
 threads = 4
 deadline = "5s"
 min = "500ms"                                # shorter segments are not classified
@@ -91,7 +91,7 @@ verify = "stamp"                             # stamp | full
 ##### TTS #####
 [tts]
 lang = "es"                                  # es | en   (requests may override)
-# voice = "damien"                           # default learned voice (`e-voice-tts voice add <id> <files>`); Pocket needs one
+# voice = "damien"                           # default learned voice (`e-voice-tts voice add <id> <files>`); Pocket and Qwen3 need one
 
 [tts.api]
 port = 5600
@@ -125,11 +125,12 @@ stt = "ws://127.0.0.1:5500"                  # STT service's WebSocket base (ws:
 # output = "…"                               # output device by a part of its name; system default when absent
 # input = "…"                                # input device by a part of its name; system default when absent
 listen = "15s"                               # wait for someone to start speaking; POST /listen may override, at most 300s
-lang = "es"                                  # es | en — what the hooks say when a reply's words don't decide; the notices' language
-                                             # MCP: a client's voice when a call names none, keyed by the
+lang = "es"                                  # es | en — what the hooks say when a reply's words don't decide; the notices'
+                                             # language; also the voice conversation's language
+
+[daemon.voices]                              # MCP: a client's voice when a call names none, keyed by the
                                              # X-Evoice-Client header it is registered with (works for every client);
                                              # its declared name counts only when each request carries it (2026-07-28+)
-[daemon.voices]
 # lens = "narrator"
 
 [daemon.talk]                                # the voice conversation (POST /talk, ecli talk)

@@ -25,22 +25,31 @@ pub struct Settings {
 impl Settings {
     // ##### PRIVATE #####
 
-    fn validate_rules(&self) -> [(bool, &'static str, String); 16] {
+    fn validate_rules(&self) -> impl Iterator<Item = (bool, &'static str, String)> {
         let pipeline = &self.stt.pipeline;
-        let (ww, vad, asr, ser) = (&pipeline.ww, &pipeline.vad, &pipeline.asr, &pipeline.ser);
-        let nemotron_only = asr.backend != AsrBackend::Nemotron && asr.chunk.is_some();
-        let streaming_only = !asr.streaming() && (asr.lead.is_some() || asr.tail.is_some());
-        let kws_only = ww.backend == WwBackend::Oww && ww.boost.is_some();
-        let unit = |value: f32| value > 0.0 && value <= 1.0;
         let threads = [
             pipeline.denoise.threads,
-            ww.threads,
-            vad.threads,
+            pipeline.ww.threads,
+            pipeline.vad.threads,
             pipeline.lid.threads,
-            asr.threads,
-            asr.offline.threads,
-            ser.threads,
+            pipeline.asr.threads,
+            pipeline.asr.offline.threads,
+            pipeline.ser.threads,
+            pipeline.diarize.threads,
         ];
+        self.validate_rules_service()
+            .into_iter()
+            .chain(self.validate_rules_nodes())
+            .chain(self.validate_rules_diarize())
+            .chain([(
+                threads.iter().all(|threads| *threads >= 1),
+                "stt.pipeline.*.threads",
+                "must be at least 1".to_owned(),
+            )])
+    }
+
+    fn validate_rules_service(&self) -> [(bool, &'static str, String); 6] {
+        let pipeline = &self.stt.pipeline;
         [
             (
                 self.stt.api.upload >= 1,
@@ -68,6 +77,17 @@ impl Settings {
                 "stt.pipeline.gain",
                 "needs peak <= 0 dBFS, noise <= 0 dBFS and 0 <= max <= 60 dB".to_owned(),
             ),
+        ]
+    }
+
+    fn validate_rules_nodes(&self) -> [(bool, &'static str, String); 9] {
+        let pipeline = &self.stt.pipeline;
+        let (ww, vad, asr, ser) = (&pipeline.ww, &pipeline.vad, &pipeline.asr, &pipeline.ser);
+        let nemotron_only = asr.backend != AsrBackend::Nemotron && asr.chunk.is_some();
+        let streaming_only = !asr.streaming() && (asr.lead.is_some() || asr.tail.is_some());
+        let kws_only = ww.backend == WwBackend::Oww && ww.boost.is_some();
+        let unit = |value: f32| value > 0.0 && value <= 1.0;
+        [
             (
                 unit(ww.threshold()),
                 "stt.pipeline.ww.threshold",
@@ -113,9 +133,20 @@ impl Settings {
                 "stt.pipeline",
                 "deadlines must be positive".to_owned(),
             ),
+        ]
+    }
+
+    fn validate_rules_diarize(&self) -> [(bool, &'static str, String); 2] {
+        let diarize = &self.stt.pipeline.diarize;
+        [
             (
-                threads.iter().all(|threads| *threads >= 1),
-                "stt.pipeline.*.threads",
+                diarize.threshold.is_finite() && diarize.threshold > 0.0,
+                "stt.pipeline.diarize.threshold",
+                "must be finite and positive".to_owned(),
+            ),
+            (
+                diarize.speakers.is_none_or(|speakers| speakers >= 1),
+                "stt.pipeline.diarize.speakers",
                 "must be at least 1".to_owned(),
             ),
         ]
@@ -163,7 +194,6 @@ impl Settings {
     /// The first rule the values break.
     pub fn validate(&self) -> Result<(), SettingsError> {
         self.validate_rules()
-            .into_iter()
             .find(|(ok, ..)| !ok)
             .map_or(Ok(()), |(_, key, reason)| Err(SettingsError::Invalid { key, reason }))
     }

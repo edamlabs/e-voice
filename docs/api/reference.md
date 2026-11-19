@@ -6,7 +6,8 @@ hide:
 # Reference
 
 Generated from each service's own OpenAPI document (`e-voice openapi`, `e-voice-tts openapi` — the
-same documents the running services serve at `/openapi.json`, with interactive copies at `/docs`).
+same documents the running services serve at `/openapi.json`, with interactive copies at `/docs`). The voice
+daemon has no OpenAPI document: its routes, events and MCP tools are tabulated in [the daemon page](../guide/daemon.md).
 
 <div id="reference"></div>
 <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.4"></script>

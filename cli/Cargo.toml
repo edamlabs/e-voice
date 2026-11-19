@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.94"
 description = "Terminal tester for e-voice: streams the microphone to /v1/stream and prints transcripts"
 license = "MIT"
+build = "../evoice/core/link.rs"
 
 [lints]
 workspace = true

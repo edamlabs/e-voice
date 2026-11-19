@@ -52,7 +52,7 @@ enum CliCommand {
 
 /// Terminal tester for the e-voice gateway.
 #[derive(Debug, Parser)]
-#[command(name = "ecli", version)]
+#[command(name = "ecli", version = env!("E_VOICE_VERSION"))]
 struct Cli {
     #[command(subcommand)]
     command: CliCommand,

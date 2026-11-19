@@ -15,7 +15,9 @@ It listens on `127.0.0.1:5700`.
 claude mcp add --transport http evoice http://127.0.0.1:5700/mcp
 ```
 
-Claude gets `speak`, `stop`, `listen` and `list_voices`. To give this registration its own voice, name it and map
+Claude gets `speak`, `stop`, `listen` and `list_voices` (parameters and results: [the daemon page](daemon.md#mcp-tools)).
+A fifth tool, `approve`, is the conversation's permission prompt and answers only its own agent. `stop` also
+drops a running conversation's turn and cancels a recording. To give this registration its own voice, name it and map
 the name in `evoice.toml`:
 
 ```
@@ -62,8 +64,11 @@ Add to a Claude Code `settings.json`:
 ## Conversation
 
 `ecli talk` starts a voice conversation with Claude Code through the daemon. It listens, you speak, it answers
-aloud, and it listens again. `ecli talk stop`, or saying «adiós» / «goodbye» on its own, ends it. It also ends by
-itself after a minute of silence (`[daemon.talk] idle`).
+aloud, and it listens again. `ecli talk stop`, or saying a goodbye as the whole utterance — «adiós», «hasta
+luego», «terminamos», «goodbye», «bye», «that's all» — ends it. It also ends by itself after a minute of silence
+(`[daemon.talk] idle`); one agent turn is cut after `turn` (10 minutes) and a permission question waits `answer`
+(15 seconds) for its yes or no. The agent is Claude Code, so `claude` must be on the daemon's PATH; `cwd` and
+`model` choose its project and model.
 
 - **It is half-duplex.** While the agent thinks or speaks, the microphone is closed: you cannot talk over it. To cut
   a long answer, run `ecli stop` (or the key you bound to it): the speech stops, the agent drops that turn, and it

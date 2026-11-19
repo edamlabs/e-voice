@@ -1,0 +1,15 @@
+[Unit]
+Description=evoiced: the e-voice daemon — microphone, speaker, MCP (loopback :5700)
+Documentation=https://github.com/edamlabs/e-voice
+After=evoice-stt.service evoice-tts.service pipewire.service
+Wants=evoice-stt.service evoice-tts.service
+
+[Service]
+ExecStartPre=mkdir -p %h/.config/evoice
+ExecStartPre=cp -n @SHARE@/evoice.toml %h/.config/evoice/evoice.toml
+ExecStart=@BIN@/evoiced --config %h/.config/evoice/evoice.toml serve
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

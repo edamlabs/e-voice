@@ -38,6 +38,13 @@ Live sockets always use the configured live backend.
 Anthropic has no speech-to-text API, so there is none to mirror. The running service serves its own
 [reference](reference.md) at `/docs`.
 
+## Speakers
+
+Uploads can carry who spoke, once `[stt.pipeline.diarize] backend = "sherpa"` is on: OpenAI
+`response_format=diarized_json`, Deepgram `diarize=true` (or `diarize_model`) and ElevenLabs `diarize=true`, each
+in its own shape (see the pages). Streaming responses and live sockets leave the speaker empty: clustering
+needs the end of the file.
+
 ## Emotion
 
 `stt.api.emotion` sets the default; every endpoint accepts `emotion=field|tag|off` (query parameter or
