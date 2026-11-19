@@ -188,6 +188,7 @@ async fn test_dropping_the_agent_kills_the_whole_group() {
         config,
         "http://127.0.0.1:1/mcp".to_owned(),
         "PROMPT".to_owned(),
+        crate::fake::TOKEN.to_owned(),
     );
     let mut turn = agent.turn("hola".to_owned()).await.unwrap();
     drain(&mut turn).await;

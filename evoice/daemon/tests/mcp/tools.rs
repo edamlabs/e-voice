@@ -28,6 +28,19 @@ async fn test_the_tool_list_is_pinned_names_descriptions_and_input_schemas() {
     daemon.stop().await;
     let expected = json!({"tools": [
         {
+            "name": "approve",
+            "description": "Claude Code's permission prompt for a voice conversation: the listener is asked aloud, and the answer\nis Claude Code's own text block. Answers the conversation's own agent alone; anyone else is refused.",
+            "inputSchema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "properties": {
+                    "input": {"description": "That tool's input."},
+                    "tool_name": {"description": "The tool asked about.", "type": "string"}
+                },
+                "required": ["tool_name", "input"],
+                "type": "object"
+            }
+        },
+        {
             "name": "list_voices",
             "description": "The voices `speak` accepts: {voices: [id, …]}.",
             "inputSchema": {"properties": {}, "type": "object"}
@@ -455,7 +468,7 @@ async fn test_the_tool_list_carries_cache_hints_only_for_the_protocol_that_has_t
         (&new["ttlMs"], &new["cacheScope"], &new["resultType"]),
         (&json!(0), &json!("public"), &json!("complete"))
     );
-    assert_eq!(new["tools"].as_array().unwrap().len(), 4);
+    assert_eq!(new["tools"].as_array().unwrap().len(), 5);
 
     let legacy = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
     let old = mcp

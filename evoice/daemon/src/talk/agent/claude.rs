@@ -14,6 +14,7 @@ use tokio::task::JoinHandle;
 
 use crate::config::talk::ClaudeConfig;
 use crate::talk::agent::base::{Agent, AgentError, AgentEvent, Ended, Turn};
+use crate::talk::approval::APPROVER;
 
 /// The daemon's MCP server as the session knows it: `approve` is `mcp__evoice__approve`.
 const SERVER: &str = "evoice";
@@ -31,6 +32,10 @@ const DENIED: [&str; 4] = [
 
 /// Built-in tools that only read: they run unasked. Every other tool of the session is asked.
 const READS: [&str; 4] = ["Read", "Glob", "Grep", "LSP"];
+
+/// The variable the conversation's secret reaches the child in: its MCP header names it as `${…}` and
+/// Claude Code expands it, so the secret never appears in the child's arguments.
+const SECRET: &str = "EVOICE_APPROVER";
 
 /// The permission mode `manual` reports in `system/init`.
 const MANUAL: &str = "default";
@@ -248,6 +253,7 @@ pub struct ClaudeAgent {
     config: ClaudeConfig,
     mcp: String,
     prompt: String,
+    token: String,
     id: String,
     state: Arc<Mutex<ClaudeState>>,
 }
@@ -277,7 +283,9 @@ impl ClaudeAgent {
             .chain(["mcp__*"])
             .collect();
         let settings = json!({"permissions": {"ask": ask, "deny": DENIED}});
-        let mcp = json!({"mcpServers": {SERVER: {"type": "http", "url": self.mcp}}});
+        let secret = format!("${{{SECRET}}}");
+        let server = json!({"type": "http", "url": self.mcp, "headers": {APPROVER: secret}});
+        let mcp = json!({"mcpServers": {SERVER: server}});
         let session = if resume { "--resume" } else { "--session-id" };
         let fixed = [
             "-p",
@@ -322,6 +330,7 @@ impl ClaudeAgent {
             .args(self.turn_args(resume))
             .env_clear()
             .envs(Self::turn_env())
+            .env(SECRET, &self.token)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -366,13 +375,17 @@ impl ClaudeAgent {
     // ##### PUBLIC #####
 
     /// `mcp` is the daemon's MCP endpoint (`http://127.0.0.1:<port>/mcp`); `prompt` is appended to the
-    /// agent's system prompt (the voice prompt, in the conversation's language).
+    /// agent's system prompt (the voice prompt, in the conversation's language); `token` is the
+    /// conversation's secret, sent on the MCP connection so that `approve` answers this session alone. It
+    /// reaches the child in its environment, never in its arguments: readable by the same user and root
+    /// through the process's environment, no longer by every local user.
     #[must_use]
-    pub fn new(config: ClaudeConfig, mcp: String, prompt: String) -> Self {
+    pub fn new(config: ClaudeConfig, mcp: String, prompt: String, token: String) -> Self {
         Self {
             config,
             mcp,
             prompt,
+            token,
             id: uuid::Uuid::new_v4().to_string(),
             state: Arc::new(Mutex::new(ClaudeState::default())),
         }

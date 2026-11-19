@@ -59,7 +59,11 @@ async fn test_a_client_on_each_older_protocol_version_initializes_lists_and_call
         let tools = client.list_all_tools().await.unwrap();
         let mut names: Vec<String> = tools.iter().map(|tool| tool.name.to_string()).collect();
         names.sort();
-        assert_eq!(names, ["list_voices", "listen", "speak", "stop"], "{version:?}");
+        assert_eq!(
+            names,
+            ["approve", "list_voices", "listen", "speak", "stop"],
+            "{version:?}"
+        );
         let result = client
             .call_tool(CallToolRequestParams::new("speak").with_arguments(arguments(&json!({"text": "4"}))))
             .await

@@ -7,6 +7,7 @@
     clippy::cast_precision_loss
 )]
 
+mod approve;
 mod client;
 #[path = "../fake/mod.rs"]
 mod fake;

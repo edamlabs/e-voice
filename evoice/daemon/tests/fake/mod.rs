@@ -641,6 +641,7 @@ pub struct Wired {
     pub hearing: FakeHearing,
     pub mic: Mic,
     pub voices: FakeVoices,
+    pub approvals: e_voice_daemon::talk::approval::Approvals,
 }
 
 pub fn wired(speech: FakeSpeech, device: Device, listen: Duration) -> Wired {
@@ -663,7 +664,15 @@ pub fn wired_with(
         listen,
         events.clone(),
     ));
-    let state = state_with(queue, listener, events.clone(), voices.clone(), table);
+    let approvals = e_voice_daemon::talk::approval::Approvals::default();
+    let state = state_with(
+        queue,
+        listener,
+        events.clone(),
+        voices.clone(),
+        table,
+        approvals.clone(),
+    );
     Wired {
         state,
         events,
@@ -671,6 +680,7 @@ pub fn wired_with(
         hearing,
         mic,
         voices,
+        approvals,
     }
 }
 
@@ -703,7 +713,14 @@ pub fn state(
     listen: Arc<dyn Listen>,
     events: broadcast::Sender<DaemonEvent>,
 ) -> e_voice_daemon::api::state::AppState {
-    state_with(speech, listen, events, FakeVoices::default(), BTreeMap::new())
+    state_with(
+        speech,
+        listen,
+        events,
+        FakeVoices::default(),
+        BTreeMap::new(),
+        e_voice_daemon::talk::approval::Approvals::default(),
+    )
 }
 
 pub fn state_with(
@@ -712,6 +729,7 @@ pub fn state_with(
     events: broadcast::Sender<DaemonEvent>,
     voices: FakeVoices,
     table: BTreeMap<String, String>,
+    approvals: e_voice_daemon::talk::approval::Approvals,
 ) -> e_voice_daemon::api::state::AppState {
     let table = e_voice_daemon::speech::table::VoiceTable::new(table);
     let mcp = e_voice_daemon::mcp::server::McpServer::new(
@@ -719,6 +737,7 @@ pub fn state_with(
         Arc::clone(&listen),
         Arc::new(voices),
         table.clone(),
+        approvals,
     );
     e_voice_daemon::api::state::AppState {
         speech,

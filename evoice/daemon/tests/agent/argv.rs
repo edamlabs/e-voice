@@ -10,7 +10,7 @@ fn on_user() -> String {
 }
 
 const SETTINGS: &str = r#"--settings={"permissions":{"ask":["Bash","Edit","Write","mcp__*"],"deny":["mcp__evoice__speak","mcp__evoice__stop","mcp__evoice__listen","mcp__evoice__list_voices"]}}"#;
-const MCP: &str = r#"--mcp-config={"mcpServers":{"evoice":{"type":"http","url":"http://127.0.0.1:1/mcp"}}}"#;
+const MCP: &str = r#"--mcp-config={"mcpServers":{"evoice":{"headers":{"x-evoice-approver":"${EVOICE_APPROVER}"},"type":"http","url":"http://127.0.0.1:1/mcp"}}}"#;
 
 fn expected(session: &str, model: Option<&str>, tools: &[&str]) -> Vec<String> {
     let mut args: Vec<String> = [
@@ -95,6 +95,7 @@ async fn test_a_prompt_that_looks_like_a_flag_or_holds_quotes_is_one_value_not_a
         },
         "http://127.0.0.1:1/mcp".to_owned(),
         "--dangerous \"quoted\" and $(whoami) `x`\nsecond line".to_owned(),
+        crate::fake::TOKEN.to_owned(),
     );
     let mut turn = agent.turn("hola".to_owned()).await.unwrap();
     drain(&mut turn).await;
@@ -211,8 +212,27 @@ fn test_the_child_sees_none_of_the_sessions_identity_and_keeps_what_it_needs() {
                     "{kept} did not reach the child:\n{seen}"
                 );
             }
+            let secret: Vec<&str> = seen
+                .lines()
+                .filter(|line| line.starts_with("EVOICE_APPROVER="))
+                .collect();
+            assert_eq!(
+                secret,
+                [format!("EVOICE_APPROVER={}", crate::fake::TOKEN)],
+                "the child's secret is the agent's own, not the parent's:\n{seen}"
+            );
+            assert!(
+                !seen.contains("parent-approver-secret"),
+                "the parent's value reached the child"
+            );
+            let argv = rig.read("argv.1");
+            assert!(
+                !argv.contains(crate::fake::TOKEN),
+                "the secret is in the child's argv:\n{argv}"
+            );
             let shell = ["PWD", "OLDPWD", "SHLVL", "_"];
             let allowed = [
+                "EVOICE_APPROVER",
                 "HOME",
                 "PATH",
                 "USER",
@@ -270,6 +290,7 @@ fn test_the_child_sees_none_of_the_sessions_identity_and_keeps_what_it_needs() {
         .env("CLAUDE_CODE_MESSAGING_SOCKET", "/tmp/socket-secret")
         .env("CLAUDE_PID", "4242")
         .env("FOO", "bar")
+        .env("EVOICE_APPROVER", "parent-approver-secret")
         .env("RUST_BACKTRACE", "1")
         .env("LC_ALL", "C.UTF-8")
         .env("ANTHROPIC_TEST", "x")

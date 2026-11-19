@@ -24,6 +24,9 @@ pub const ERROR_DURING: &str = include_str!("fixtures/result_error_during.jsonl"
 pub const MAX_TURNS: &str = include_str!("fixtures/result_max_turns.jsonl");
 pub const INTERRUPT_REPLY: &str = include_str!("fixtures/interrupt_reply.jsonl");
 
+/// The conversation secret the fake sessions are started with.
+pub const TOKEN: &str = "tok-test-0123456789";
+
 pub const PLACEHOLDER: &str = "00000000-0000-4000-8000-000000000000";
 
 /// The fake `claude`: records its argv, environment and every stdin line in the directory it runs in, and plays
@@ -116,7 +119,12 @@ impl Rig {
             ..ClaudeConfig::default()
         };
         tweak(&mut config);
-        let agent = ClaudeAgent::new(config, "http://127.0.0.1:1/mcp".to_owned(), "PROMPT".to_owned());
+        let agent = ClaudeAgent::new(
+            config,
+            "http://127.0.0.1:1/mcp".to_owned(),
+            "PROMPT".to_owned(),
+            TOKEN.to_owned(),
+        );
         Self { dir, agent }
     }
 

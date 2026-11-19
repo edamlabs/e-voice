@@ -7,7 +7,7 @@ use axum::http::request::Parts;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CacheScope, CallToolResult, Implementation, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+    CacheScope, CallToolResult, ContentBlock, Implementation, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
     ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{MaybeSendFuture, RequestContext};
@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 
 use crate::speech::base::{SpeechRequest, Voices};
 use crate::speech::table::{CLIENT, VoiceTable};
+use crate::talk::approval::{APPROVER, Approvals};
 use crate::workflow::listen::Listen;
 use crate::workflow::queue::SpeechQueue;
 
@@ -33,6 +34,15 @@ pub struct SpeakParams {
     /// A voice id from `list_voices`; when omitted, the voice configured for this client's
     /// `X-Evoice-Client`, else the speech service's default.
     voice: Option<String>,
+}
+
+/// What Claude Code sends its permission prompt tool: the tool it asks about and that tool's input.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ApproveParams {
+    /// The tool asked about.
+    tool_name: String,
+    /// That tool's input.
+    input: Value,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -50,6 +60,7 @@ pub struct McpServer {
     listen: Arc<dyn Listen>,
     voices: Arc<dyn Voices>,
     table: VoiceTable,
+    approvals: Approvals,
     tool_router: ToolRouter<Self>,
 }
 
@@ -87,12 +98,19 @@ impl McpServer {
     // ##### PUBLIC #####
 
     #[must_use]
-    pub fn new(speech: SpeechQueue, listen: Arc<dyn Listen>, voices: Arc<dyn Voices>, table: VoiceTable) -> Self {
+    pub fn new(
+        speech: SpeechQueue,
+        listen: Arc<dyn Listen>,
+        voices: Arc<dyn Voices>,
+        table: VoiceTable,
+        approvals: Approvals,
+    ) -> Self {
         Self {
             speech,
             listen,
             voices,
             table,
+            approvals,
             tool_router: Self::tool_router(),
         }
     }
@@ -166,6 +184,22 @@ impl McpServer {
             Ok(voices) => Self::common_success(Ok(json!({"voices": voices}))),
             Err(error) => Self::common_failure(&error, StatusCode::BAD_GATEWAY),
         }
+    }
+
+    /// Claude Code's permission prompt for a voice conversation: the listener is asked aloud, and the answer
+    /// is Claude Code's own text block. Answers the conversation's own agent alone; anyone else is refused.
+    #[tool]
+    async fn approve(
+        &self,
+        Parameters(ApproveParams { tool_name, input }): Parameters<ApproveParams>,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
+        let token = context
+            .extensions
+            .get::<Parts>()
+            .and_then(|parts| parts.headers.get(APPROVER)?.to_str().ok().map(str::to_owned));
+        let verdict = self.approvals.ask(token.as_deref(), &tool_name, &input).await;
+        CallToolResult::success(vec![ContentBlock::text(verdict.behavior())])
     }
 }
 

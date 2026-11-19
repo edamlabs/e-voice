@@ -14,6 +14,7 @@ use e_voice_daemon::mcp::server::McpServer;
 use e_voice_daemon::speech::base::Voices;
 use e_voice_daemon::speech::table::VoiceTable;
 use e_voice_daemon::speech::tts::TtsSpeech;
+use e_voice_daemon::talk::approval::Approvals;
 use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::CaptureThread;
 use e_voice_daemon::workflow::listen::{Listen, Listener};
@@ -95,7 +96,8 @@ impl Cli {
                 let listen: Arc<dyn Listen> = Arc::new(listener);
                 let subscribers = Arc::new(Semaphore::new(SUBSCRIBERS));
                 let table = VoiceTable::new(settings.daemon.voices.clone());
-                let mcp = McpServer::new(speech.clone(), Arc::clone(&listen), voices, table.clone());
+                let approvals = Approvals::default();
+                let mcp = McpServer::new(speech.clone(), Arc::clone(&listen), voices, table.clone(), approvals);
                 let state = AppState {
                     speech,
                     listen,
