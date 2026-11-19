@@ -23,6 +23,7 @@ use crate::talk::chunker::SentenceChunker;
 use crate::talk::notice::TalkNotice;
 use crate::workflow::listen::{Listen, ListenError, ListenLease};
 use crate::workflow::queue::{Halted, Queued, SpeakError, SpeechQueue};
+use crate::workflow::record::Record;
 
 /// Requests refused without asking, in a row, before the conversation says so aloud: the first ones the
 /// agent rephrases from the reason it got.
@@ -65,9 +66,10 @@ pub trait Talk: Debug + Send + Sync {
     /// with no conversation.
     fn halt(&self) -> Option<BoxFuture<'_, ()>>;
 
-    /// The one stop every door runs: the speech is cut at once, the conversation halted, and once it holds
-    /// the halt the speech is stopped again, so nothing of the halted turn stays queued. With no
-    /// conversation, a single stop. What the first stop cut is the answer.
+    /// The one stop every door runs: a voice recording is cancelled and learns nothing, the speech is cut
+    /// at once, the conversation halted, and once it holds the halt the speech is stopped again, so nothing
+    /// of the halted turn stays queued. With no conversation, a single stop. What the first stop cut is the
+    /// answer.
     ///
     /// # Errors
     /// The speech queue is gone.
@@ -498,11 +500,13 @@ impl Drop for Running {
 }
 
 /// The voice conversation: one at a time, each with a fresh agent from `make` (handed the conversation's
-/// secret), the microphone held for its whole length, and the approval desk its own.
+/// secret), the microphone held for its whole length, and the approval desk its own. `record` is the voice
+/// recorder, held only so the one stop cancels it too.
 pub struct TalkRunner<A, F> {
     make: F,
     listen: Arc<dyn Listen>,
     speech: SpeechQueue,
+    record: Arc<dyn Record>,
     approvals: Approvals,
     events: broadcast::Sender<DaemonEvent>,
     setup: TalkSetup,
@@ -545,6 +549,7 @@ where
         make: F,
         listen: Arc<dyn Listen>,
         speech: SpeechQueue,
+        record: Arc<dyn Record>,
         approvals: Approvals,
         events: broadcast::Sender<DaemonEvent>,
         setup: TalkSetup,
@@ -553,6 +558,7 @@ where
             make,
             listen,
             speech,
+            record,
             approvals,
             events,
             setup,
@@ -649,6 +655,7 @@ where
 
     fn stop(&self) -> BoxFuture<'_, Result<Halted, SpeakError>> {
         Box::pin(async move {
+            self.record.cancel();
             let stopped = self.speech.stop().await;
             if let Some(halted) = self.halt() {
                 halted.await;

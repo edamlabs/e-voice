@@ -220,7 +220,7 @@ async fn test_a_speaker_past_the_timeout_gets_a_200_over_http() {
             .await
     });
     assert!(mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     tokio::time::sleep(Duration::from_millis(600)).await;
     feed.say(Recognized::Final(heard("tarde"), None));
     let (status, body) = call.await.unwrap();
@@ -288,7 +288,7 @@ async fn test_an_unspoken_final_over_forty_seconds_is_not_waited_for_a_502_when_
     let asking = Arc::clone(&daemon);
     let call = tokio::spawn(async move { asking.listen(None, None).await });
     assert!(mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.fail(HearingError::Server("closed with 1011".to_owned()));
     let (status, body) = call.await.unwrap();
     Arc::into_inner(daemon).unwrap().stop().await;

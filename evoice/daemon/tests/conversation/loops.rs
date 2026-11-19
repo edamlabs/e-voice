@@ -287,7 +287,9 @@ async fn test_a_second_start_is_refused_running_and_so_is_a_start_while_a_listen
     let holding = tokio::spawn(async move { listen.listen(Some(Duration::from_secs(5))).await });
     rig.hearing(2).await;
     assert_eq!(rig.talk.start().await, Err(TalkError::Microphone));
-    feed.say(e_voice_daemon::hearing::base::Recognized::Started);
+    feed.say(e_voice_daemon::hearing::base::Recognized::Started(
+        std::time::Duration::ZERO,
+    ));
     feed.say(e_voice_daemon::hearing::base::Recognized::Final(
         crate::fake::heard("hola"),
         None,

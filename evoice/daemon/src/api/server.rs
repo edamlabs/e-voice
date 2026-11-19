@@ -13,6 +13,7 @@ use crate::api::speak::speak;
 use crate::api::state::AppState;
 use crate::api::stop::stop;
 use crate::api::talk;
+use crate::api::voices;
 use crate::core::settings::Settings;
 
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +39,9 @@ impl Server {
             .route("/listen", post(listen))
             .route("/stop", post(stop))
             .route("/talk", post(talk::start).delete(talk::end))
+            .route("/voices", post(voices::create))
+            .route("/voices/finish", post(voices::finish))
+            .route("/voices/script", get(voices::script))
             .route("/events", get(events))
             .route("/hooks/stop", post(hooks::stop))
             .route("/hooks/notification", post(hooks::notification))

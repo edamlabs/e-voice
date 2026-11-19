@@ -100,7 +100,7 @@ impl Rig {
     pub async fn says(&self, n: usize, text: &str) {
         self.hearing(n).await;
         let feed = &self.feeds[n - 1];
-        feed.say(Recognized::Started);
+        feed.say(Recognized::Started(std::time::Duration::ZERO));
         feed.say(Recognized::Final(heard(text), None));
     }
 

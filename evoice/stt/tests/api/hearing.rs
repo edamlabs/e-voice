@@ -18,6 +18,9 @@ fn rate() -> NonZeroU32 {
     NonZeroU32::new(16_000).unwrap()
 }
 
+const STARTED: u64 = 1_600;
+const STOPPED: u64 = 9_600;
+
 fn blocks(value: f32, samples: usize) -> Vec<f32> {
     vec![value; samples]
 }
@@ -40,13 +43,15 @@ async fn test_the_daemons_url_is_accepted_and_every_event_it_gets_parses_into_th
     assert_eq!(
         parsed.first(),
         Some(&SttEvent::Speech {
-            state: SttVoice::Started
+            state: SttVoice::Started,
+            at: STARTED
         }),
         "{texts:?}"
     );
     assert!(
         parsed.contains(&SttEvent::Speech {
-            state: SttVoice::Stopped
+            state: SttVoice::Stopped,
+            at: STOPPED
         }),
         "{texts:?}"
     );
@@ -85,7 +90,7 @@ async fn test_the_driver_against_the_real_service_hears_started_then_the_final_o
             break;
         }
     }
-    assert!(matches!(seen.first(), Some(Recognized::Started)), "{seen:?}");
+    assert!(matches!(seen.first(), Some(Recognized::Started(_))), "{seen:?}");
     match seen.last() {
         Some(Recognized::Final(heard, None)) => assert_eq!(heard.text, "batch:8000"),
         other => panic!("{other:?} in {seen:?}"),

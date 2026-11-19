@@ -8,6 +8,15 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Added
 
+- `ecli voice add <id>` (TODO_VOICE-HELM_clone): a voice learned from a text read aloud. The daemon records from its
+  microphone (`POST /voices`; busy while a conversation or a listen holds it) until 2.5 s of silence after speech,
+  30 s — the most the TTS keeps — or `POST /voices/finish` (Enter in `ecli`); the clip is cut to the STT's speech
+  bounds, sent at 24 kHz mono to the TTS `POST /v1/voices` with its text (yours, else the reading script of
+  `GET /voices/script`, else the transcript), and a sample is said in the new voice. An existing id needs
+  `--replace`; `/stop` and the MCP `stop` cancel it and nothing is learned. `recording` states on `/events`.
+  Evidence: 40 recording proofs (every end condition to the sample, busy, cancel by each door, the uploaded WAV's
+  header and sizes, text precedence, 400/408/409/502), `ecli voice` against a fake daemon; workspace 835 passed;
+  `make coverage` 92.38 %. Not heard yet on a real microphone.
 - `evoiced`, the daemon that owns the microphone and the speaker (TODO_vehicle step 7): `evoiced serve` on
   `127.0.0.1:5700` — loopback unless `[daemon] host` says otherwise, never the services' `[server] host`.
   - `POST /speak {text, voice?, lang?}`: through the TTS service, one voice at a time, answering when the audio has

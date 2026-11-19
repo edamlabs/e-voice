@@ -12,7 +12,7 @@ use e_voice_daemon::core::settings::Settings;
 use e_voice_daemon::hearing::stt::SttHearing;
 use e_voice_daemon::mcp::server::McpServer;
 use e_voice_daemon::schema::event::DaemonEvent;
-use e_voice_daemon::speech::base::Voices;
+use e_voice_daemon::speech::base::{Learning, Voices};
 use e_voice_daemon::speech::table::VoiceTable;
 use e_voice_daemon::speech::tts::TtsSpeech;
 use e_voice_daemon::talk::agent::claude::ClaudeAgent;
@@ -23,6 +23,7 @@ use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::CaptureThread;
 use e_voice_daemon::workflow::listen::{Listen, Listener};
 use e_voice_daemon::workflow::queue::SpeechQueue;
+use e_voice_daemon::workflow::record::{Record, Recorder};
 use e_voice_device::capture::cpal::CpalCapture;
 use e_voice_device::playback::cpal::CpalPlayback;
 use tokio::signal::unix::{Signal, SignalKind, signal};
@@ -66,6 +67,7 @@ impl Cli {
         settings: &Settings,
         listen: &Arc<dyn Listen>,
         speech: &SpeechQueue,
+        record: &Arc<dyn Record>,
         approvals: Approvals,
         events: &broadcast::Sender<DaemonEvent>,
     ) -> Arc<dyn Talk> {
@@ -83,8 +85,8 @@ impl Cli {
             config: settings.daemon.talk.clone(),
         };
         let make = move |token: String| ClaudeAgent::new(claude.clone(), mcp.clone(), prompt.clone(), token);
-        let (listen, speech, events) = (Arc::clone(listen), speech.clone(), events.clone());
-        Arc::new(TalkRunner::new(make, listen, speech, approvals, events, setup))
+        let (listen, speech, record, events) = (Arc::clone(listen), speech.clone(), Arc::clone(record), events.clone());
+        Arc::new(TalkRunner::new(make, listen, speech, record, approvals, events, setup))
     }
 
     /// Resolves on SIGINT or on `terminate`, the SIGTERM handler installed before the daemon binds: a
@@ -114,6 +116,7 @@ impl Cli {
                 });
                 let tts = TtsSpeech::new(settings.daemon.tts.clone());
                 let voices: Arc<dyn Voices> = Arc::new(tts.clone());
+                let learning: Arc<dyn Learning> = Arc::new(tts.clone());
                 let speech = SpeechQueue::start(tts, audio, events.clone());
                 let input = settings.daemon.input.clone();
                 let capture = CaptureThread::new(move |deliver| {
@@ -123,13 +126,22 @@ impl Cli {
                     Ok(Box::new(capture))
                 });
                 let hearing = SttHearing::new(settings.daemon.stt.clone());
-                let listener = Listener::new(hearing, capture, settings.daemon.listen, events.clone());
+                let listener = Listener::new(hearing.clone(), capture.clone(), settings.daemon.listen, events.clone());
                 let listen: Arc<dyn Listen> = Arc::new(listener);
+                let record: Arc<dyn Record> = Arc::new(Recorder::new(
+                    hearing,
+                    capture,
+                    Arc::clone(&listen),
+                    Arc::clone(&voices),
+                    learning,
+                    settings.daemon.listen,
+                    events.clone(),
+                ));
                 let subscribers = Arc::new(Semaphore::new(SUBSCRIBERS));
                 let table = VoiceTable::new(settings.daemon.voices.clone());
                 let approvals = Approvals::default();
                 let desk = approvals.clone();
-                let talk = Self::run_talk(&settings, &listen, &speech, approvals, &events);
+                let talk = Self::run_talk(&settings, &listen, &speech, &record, approvals, &events);
                 let mcp = McpServer::new(
                     speech.clone(),
                     Arc::clone(&listen),
@@ -147,6 +159,7 @@ impl Cli {
                     table,
                     lang: settings.daemon.lang,
                     talk,
+                    record,
                 };
                 Server::serve(&settings, state, Self::run_shutdown(terminate)).await?;
             }

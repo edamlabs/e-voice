@@ -43,7 +43,7 @@ async fn test_listen_returns_the_first_final_and_sends_every_block_bit_exact() {
     while feed.sent().len() < blocks.concat().len() && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(2)).await;
     }
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Partial("ho".to_owned()));
     feed.say(Recognized::Final(heard("hola"), None));
     let got = task.await.unwrap().unwrap();
@@ -60,12 +60,12 @@ async fn test_a_final_with_an_error_or_without_text_is_skipped_and_the_next_one_
     let feed = hearing.session();
     let task = spawn(&listener, Some(Duration::from_secs(5)));
     assert!(mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Final(heard("lost"), Some(NodeError::Timeout)));
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Final(heard("   "), None));
     feed.say(Recognized::Final(heard(""), None));
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Final(heard("segunda"), None));
     assert_eq!(task.await.unwrap().unwrap(), heard("segunda"));
     assert!(mic.freed().await);
@@ -105,7 +105,7 @@ async fn test_a_final_long_after_the_timeout_succeeds_when_speech_started_in_tim
     let feed = hearing.session();
     let task = spawn(&listener, Some(Duration::from_millis(100)));
     assert!(mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     tokio::time::sleep(Duration::from_millis(500)).await;
     feed.say(Recognized::Final(heard("tarde"), None));
     assert_eq!(task.await.unwrap().unwrap(), heard("tarde"));
@@ -118,7 +118,7 @@ async fn test_started_then_an_error_final_returns_to_waiting_against_the_origina
     let started = Instant::now();
     let task = spawn(&listener, Some(Duration::from_millis(400)));
     assert!(mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     tokio::time::sleep(Duration::from_millis(100)).await;
     feed.say(Recognized::Final(heard("x"), Some(NodeError::Overload)));
     let error = task.await.unwrap().unwrap_err();
@@ -136,7 +136,7 @@ async fn test_an_error_final_after_the_original_deadline_times_out_at_once() {
     let feed = hearing.session();
     let task = spawn(&listener, Some(Duration::from_millis(100)));
     assert!(mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     tokio::time::sleep(Duration::from_millis(400)).await;
     assert!(!task.is_finished());
     let at = Instant::now();

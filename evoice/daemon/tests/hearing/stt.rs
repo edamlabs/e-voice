@@ -100,8 +100,8 @@ async fn test_samples_go_out_as_one_binary_frame_each_little_endian_bit_exact() 
 async fn test_the_event_stream_maps_to_recognized_and_skips_what_the_daemon_does_not_use() {
     let got = events(
         vec![
-            text(r#"{"type":"speech","state":"started"}"#),
-            text(r#"{"type":"speech","state":"stopped"}"#),
+            text(r#"{"type":"speech","state":"started","at":16000}"#),
+            text(r#"{"type":"speech","state":"stopped","at":48000}"#),
             text(r#"{"type":"wake","word":"hey"}"#),
             text(r#"{"type":"speakers","segments":[]}"#),
             text(r#"{"type":"something-new","x":1}"#),
@@ -109,7 +109,7 @@ async fn test_the_event_stream_maps_to_recognized_and_skips_what_the_daemon_does
             text(r#"{"type":"partial","text":"ho"}"#),
             text(FINAL),
         ],
-        3,
+        4,
     )
     .await;
     let emotion = Emotion {
@@ -122,9 +122,10 @@ async fn test_the_event_stream_maps_to_recognized_and_skips_what_the_daemon_does
         lang: Lang::Es,
         emotion,
     };
-    assert_eq!(got[0], Some(Ok(Recognized::Started)));
-    assert_eq!(got[1], Some(Ok(Recognized::Partial("ho".to_owned()))));
-    assert_eq!(got[2], Some(Ok(Recognized::Final(heard, None))));
+    assert_eq!(got[0], Some(Ok(Recognized::Started(Duration::from_secs(1)))));
+    assert_eq!(got[1], Some(Ok(Recognized::Stopped(Duration::from_secs(3)))));
+    assert_eq!(got[2], Some(Ok(Recognized::Partial("ho".to_owned()))));
+    assert_eq!(got[3], Some(Ok(Recognized::Final(heard, None))));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -255,15 +256,17 @@ async fn test_a_recognizer_that_never_answers_the_handshake_is_a_connect_error_w
 fn test_the_mirror_parses_the_voice_states_and_files_the_rest_under_other() {
     let parse = |json: &str| serde_json::from_str::<SttEvent>(json).unwrap();
     assert_eq!(
-        parse(r#"{"type":"speech","state":"started","at":1.5}"#),
+        parse(r#"{"type":"speech","state":"started","at":24000}"#),
         SttEvent::Speech {
-            state: SttVoice::Started
+            state: SttVoice::Started,
+            at: 24_000
         }
     );
     assert_eq!(
-        parse(r#"{"type":"speech","state":"stopped"}"#),
+        parse(r#"{"type":"speech","state":"stopped","at":48000}"#),
         SttEvent::Speech {
-            state: SttVoice::Stopped
+            state: SttVoice::Stopped,
+            at: 48_000
         }
     );
     assert_eq!(parse(r#"{"type":"wake","word":"x"}"#), SttEvent::Other);

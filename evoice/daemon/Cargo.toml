@@ -20,9 +20,10 @@ e-voice-device = { path = "../device" }
 axum = { version = "0.8.9", features = ["ws"] }
 clap = { version = "4.6.8", features = ["derive"] }
 futures-util = "0.3.34"
+hound = "3.5.1"
 humantime-serde = "1.1.1"
 pulldown-cmark = { version = "0.13.6", default-features = false }
-reqwest = { version = "0.13.5", default-features = false }
+reqwest = { version = "0.13.5", default-features = false, features = ["multipart"] }
 rmcp = { version = "3.11.0", default-features = false, features = ["server", "macros", "transport-streamable-http-server"] }
 rustix = { version = "1.1.6", features = ["process"] }
 serde = { version = "1.0.229", features = ["derive"] }

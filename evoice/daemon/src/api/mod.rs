@@ -7,3 +7,4 @@ pub mod speak;
 pub mod state;
 pub mod stop;
 pub mod talk;
+pub mod voices;

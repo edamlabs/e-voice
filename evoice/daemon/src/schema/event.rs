@@ -34,6 +34,19 @@ pub enum ListenState {
     Closed,
 }
 
+/// Where a voice recording stands: recording from the microphone, the first speech heard, the recording
+/// ended and the clip on its way to the speech service, the voice learned; or failed, whatever ended it
+/// otherwise (a stop, a dropped client, a refusal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecordState {
+    Started,
+    Heard,
+    Finished,
+    Learned,
+    Failed,
+}
+
 /// Everything `GET /events` sends: the daemon's public wire contract, one JSON text message per event,
 /// tagged by `type`.
 ///
@@ -49,6 +62,10 @@ pub enum ListenState {
 ///   listen that ends otherwise sends none.
 /// - `talk` — `{"type": "talk", "state": "idle" | "listening" | "thinking" | "speaking" | "asking"}`: every
 ///   change of the voice conversation's state, from its start (`listening`) to its end (`idle`).
+/// - `recording` — `{"type": "recording", "state": "started" | "heard" | "finished" | "learned" |
+///   "failed"}`: a `POST /voices` once the microphone is open, then its first speech, the end of the
+///   recording, and exactly one of `learned` or `failed`. A recording that fails before the microphone
+///   opens sends none.
 /// - `lagged` — `{"type": "lagged", "missed": n}`: sent to one subscriber alone, in place of the `n`
 ///   events it fell too far behind to receive. Never broadcast.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -59,5 +76,6 @@ pub enum DaemonEvent {
     Partial { text: String },
     Heard(Heard),
     Talk { state: TalkState },
+    Recording { state: RecordState },
     Lagged { missed: u64 },
 }

@@ -24,6 +24,10 @@ const CONNECT: Duration = Duration::from_secs(5);
 /// bytes each, so a message near the cap is a broken peer, refused before it is buffered.
 const MESSAGE: usize = 65_536;
 
+/// One sample of the recognizer's own stream in nanoseconds: it counts `speech` offsets at 16 kHz,
+/// whatever rate the session was opened at.
+const SAMPLE: u64 = 62_500;
+
 /// Whether a `speech` event opens or closes a segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -33,13 +37,15 @@ pub enum SttVoice {
 }
 
 /// What the recognizer's native stream (`view=struct`) sends, read as far as the daemon needs: `wake`,
-/// `speakers` and fields such as `segment` are skipped. Public so the recognizer's own tests can prove
-/// this mirror parses what it really emits.
+/// `speakers` and fields such as `segment` are skipped; `at` is the 16 kHz stream sample where speech
+/// started (estimated) or stopped (exact). Public so the recognizer's own tests can prove this mirror
+/// parses what it really emits.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum SttEvent {
     Speech {
         state: SttVoice,
+        at: u64,
     },
     Partial {
         text: String,
@@ -140,10 +146,13 @@ impl Transcription for SttTranscription {
                 Err(error) => return Some(Err(HearingError::Protocol(error.to_string()))),
             };
             match event {
-                Ok(SttEvent::Speech { state }) => match state {
-                    SttVoice::Started => return Some(Ok(Recognized::Started)),
-                    SttVoice::Stopped => {}
-                },
+                Ok(SttEvent::Speech { state, at }) => {
+                    let at = Duration::from_nanos(at.saturating_mul(SAMPLE));
+                    return Some(Ok(match state {
+                        SttVoice::Started => Recognized::Started(at),
+                        SttVoice::Stopped => Recognized::Stopped(at),
+                    }));
+                }
                 Ok(SttEvent::Partial { text }) => return Some(Ok(Recognized::Partial(text))),
                 Ok(SttEvent::Final {
                     text,

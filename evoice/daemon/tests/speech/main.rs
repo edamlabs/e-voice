@@ -7,6 +7,7 @@
 )]
 
 mod digest;
+mod learn;
 mod notice;
 mod property;
 mod scripted;
