@@ -1,13 +1,33 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 /// `[daemon.talk]`: the voice conversation with an agent. It lives under `[daemon]` because the services
-/// read the same file and refuse a table they do not know.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// read the same file and refuse a table they do not know. `idle` is how long it waits for the user to speak
+/// before it ends; `turn` how long one agent turn may run before it is cut; `answer` how long a permission
+/// question waits for a yes or a no.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TalkConfig {
+    #[serde(with = "humantime_serde")]
+    pub idle: Duration,
+    #[serde(with = "humantime_serde")]
+    pub turn: Duration,
+    #[serde(with = "humantime_serde")]
+    pub answer: Duration,
     pub claude: ClaudeConfig,
+}
+
+impl Default for TalkConfig {
+    fn default() -> Self {
+        Self {
+            idle: Duration::from_secs(60),
+            turn: Duration::from_secs(600),
+            answer: Duration::from_secs(15),
+            claude: ClaudeConfig::default(),
+        }
+    }
 }
 
 /// `[daemon.talk.claude]`: Claude Code as the agent, run headless.

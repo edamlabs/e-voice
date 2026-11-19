@@ -71,6 +71,42 @@ enum Control {
     Stop(oneshot::Sender<Halted>),
 }
 
+/// A text the queue has accepted: its end, once it comes. Dropping the handle does not stop the speech.
+#[derive(Debug)]
+pub struct Queued {
+    spoken: oneshot::Receiver<Ended>,
+}
+
+impl Queued {
+    /// Resolves once the text has played to its end, or was cut short.
+    ///
+    /// # Errors
+    /// The device or the speech service failing, or the queue stopping.
+    pub async fn done(self) -> Result<(u64, Outcome), SpeakError> {
+        let (id, ended) = self.spoken.await.map_err(|_| SpeakError::Stopped)?;
+        ended.map(|outcome| (id, outcome))
+    }
+}
+
+/// Room held in the queue: a text queued through it is accepted at once, behind everything before it, with
+/// no wait between the decision to queue it and the queuing.
+#[derive(Debug)]
+pub struct Slot<'a> {
+    permit: mpsc::Permit<'a, Job>,
+}
+
+impl Slot<'_> {
+    /// Validates `request` and queues it in the room held.
+    ///
+    /// # Errors
+    /// Empty text, or a text over [`TEXT`] characters; the room is given back.
+    pub fn queue(self, request: SpeechRequest) -> Result<Queued, SpeakError> {
+        let (job, spoken) = SpeechQueue::common_job(request)?;
+        self.permit.send(job);
+        Ok(Queued { spoken })
+    }
+}
+
 /// The queue's state, watched by its handles and announced on the daemon's events: one place moves it, so
 /// no transition is ever seen by one and missed by the other.
 struct SpeechStatus {
@@ -270,20 +306,26 @@ impl SpeechQueue {
         next
     }
 
-    /// Validates `request` and hands it to the queue's task without waiting: the text is accepted, or
-    /// refused, before this returns.
-    fn common_enqueue(&self, request: SpeechRequest) -> Result<oneshot::Receiver<Ended>, SpeakError> {
+    /// Validates `request` into a job, with where its end will be told.
+    fn common_job(request: SpeechRequest) -> Result<(Job, oneshot::Receiver<Ended>), SpeakError> {
         (!request.text.trim().is_empty())
             .then_some(())
             .ok_or(SpeakError::Empty)?;
         let length = request.text.chars().count();
         (length <= TEXT).then_some(()).ok_or(SpeakError::TooLong(length))?;
         let (done, spoken) = oneshot::channel();
-        self.jobs.try_send(Job { request, done }).map_err(|error| match error {
+        Ok((Job { request, done }, spoken))
+    }
+
+    /// Validates `request` and hands it to the queue's task without waiting: the text is accepted, or
+    /// refused, before this returns.
+    fn common_enqueue(&self, request: SpeechRequest) -> Result<Queued, SpeakError> {
+        let (job, spoken) = Self::common_job(request)?;
+        self.jobs.try_send(job).map_err(|error| match error {
             TrySendError::Full(_) => SpeakError::Full,
             TrySendError::Closed(_) => SpeakError::Stopped,
         })?;
-        Ok(spoken)
+        Ok(Queued { spoken })
     }
 
     // ##########################################################
@@ -313,9 +355,17 @@ impl SpeechQueue {
     /// Empty text, a text over [`TEXT`] characters, a full queue, a stopped queue, a device that cannot
     /// open, or the speech service failing.
     pub async fn say(&self, request: SpeechRequest) -> Result<(u64, Outcome), SpeakError> {
-        let spoken = self.common_enqueue(request)?;
-        let (id, ended) = spoken.await.map_err(|_| SpeakError::Stopped)?;
-        ended.map(|outcome| (id, outcome))
+        self.common_enqueue(request)?.done().await
+    }
+
+    /// Waits for room in the queue and holds it: what to queue there can still be decided, and is accepted
+    /// at once. Dropping the slot gives the room back.
+    ///
+    /// # Errors
+    /// A stopped queue.
+    pub async fn reserve(&self) -> Result<Slot<'_>, SpeakError> {
+        let permit = self.jobs.reserve().await.map_err(|_| SpeakError::Stopped)?;
+        Ok(Slot { permit })
     }
 
     /// Queues `request` and returns at once, without waiting for it to be spoken: `say` without its

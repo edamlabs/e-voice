@@ -14,7 +14,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use e_voice_device::host::CpalHost;
 
-use crate::daemon::{DaemonError, ListenArgs, SayArgs, StopArgs};
+use crate::daemon::{DaemonError, ListenArgs, SayArgs, StopArgs, TalkArgs};
 use crate::stt::{SttArgs, SttError};
 use crate::tts::{TtsArgs, TtsError};
 
@@ -42,6 +42,8 @@ enum CliCommand {
     Stop(StopArgs),
     /// Listen once through the daemon and print what was heard.
     Listen(ListenArgs),
+    /// Start or stop a voice conversation with the agent through the daemon.
+    Talk(TalkArgs),
 }
 
 /// Terminal tester for the e-voice gateway.
@@ -67,6 +69,7 @@ async fn main() -> ExitCode {
         CliCommand::Say(args) => args.run().await.map_err(CliError::from),
         CliCommand::Stop(args) => args.run().await.map_err(CliError::from),
         CliCommand::Listen(args) => args.run().await.map_err(CliError::from),
+        CliCommand::Talk(args) => args.run().await.map_err(CliError::from),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,

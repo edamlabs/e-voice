@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 use crate::speech::base::{SpeechRequest, Voices};
 use crate::speech::table::{CLIENT, VoiceTable};
 use crate::talk::approval::{APPROVER, Approvals};
+use crate::talk::runner::Talk;
 use crate::workflow::listen::Listen;
 use crate::workflow::queue::SpeechQueue;
 
@@ -61,6 +62,7 @@ pub struct McpServer {
     voices: Arc<dyn Voices>,
     table: VoiceTable,
     approvals: Approvals,
+    talk: Arc<dyn Talk>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -104,6 +106,7 @@ impl McpServer {
         voices: Arc<dyn Voices>,
         table: VoiceTable,
         approvals: Approvals,
+        talk: Arc<dyn Talk>,
     ) -> Self {
         Self {
             speech,
@@ -111,6 +114,7 @@ impl McpServer {
             voices,
             table,
             approvals,
+            talk,
             tool_router: Self::tool_router(),
         }
     }
@@ -151,10 +155,11 @@ impl McpServer {
         }
     }
 
-    /// Silence what is being said and drop every text waiting: {stopped: id or null, dropped}.
+    /// Silence what is being said and drop every text waiting: {stopped: id or null, dropped}. A voice
+    /// conversation that is thinking, speaking or asking also drops the agent's turn and listens again.
     #[tool]
     async fn stop(&self) -> CallToolResult {
-        match self.speech.stop().await {
+        match self.talk.stop().await {
             Ok(halted) => Self::common_success(serde_json::to_value(halted)),
             Err(error) => Self::common_failure(&error, error.status()),
         }

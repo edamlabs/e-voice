@@ -20,18 +20,17 @@ fn deny(message: &str) -> Verdict {
 }
 
 async fn next(inbox: &mut e_voice_daemon::talk::approval::ApprovalInbox) -> Pending {
-    tokio::time::timeout(Duration::from_secs(5), inbox.recv())
-        .await
-        .unwrap()
-        .expect("a question")
+    crate::fake::question(inbox).await
 }
 
+/// No question reaches the inbox; a request refused unasked is reported to it as a `Refused` item, and
+/// that is not a question.
 async fn nothing(inbox: &mut e_voice_daemon::talk::approval::ApprovalInbox) {
-    let seen = tokio::time::timeout(Duration::from_millis(150), inbox.recv()).await;
+    let seen = crate::fake::asked(inbox).await;
     assert!(
-        seen.is_err(),
+        seen.is_none(),
         "the inbox saw a question: {:?}",
-        seen.map(|p| p.map(|p| p.question))
+        seen.map(|p| p.question)
     );
 }
 
@@ -287,8 +286,8 @@ async fn test_many_concurrent_requests_are_asked_one_at_a_time_in_order_with_non
 }
 
 async fn nothing_else_queued(inbox: &mut e_voice_daemon::talk::approval::ApprovalInbox) {
-    let seen = tokio::time::timeout(Duration::from_millis(30), inbox.recv()).await;
-    assert!(seen.is_err(), "two questions were open at once");
+    let seen = crate::fake::asked_within(inbox, Duration::from_millis(30)).await;
+    assert!(seen.is_none(), "two questions were open at once");
 }
 
 #[tokio::test]

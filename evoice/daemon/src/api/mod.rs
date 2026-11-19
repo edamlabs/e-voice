@@ -6,3 +6,4 @@ pub mod server;
 pub mod speak;
 pub mod state;
 pub mod stop;
+pub mod talk;

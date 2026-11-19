@@ -89,10 +89,10 @@ async fn test_a_wrong_missing_empty_or_literal_header_is_denied_and_nothing_is_a
             "{extra:?}"
         );
     }
-    let seen = tokio::time::timeout(Duration::from_millis(150), inbox.recv()).await;
+    let seen = crate::fake::asked(&mut inbox).await;
     daemon.stop().await;
     assert!(
-        seen.is_err(),
+        seen.is_none(),
         "the inbox saw a question from a request that is not the agent's own"
     );
 }
@@ -109,10 +109,7 @@ async fn test_the_right_header_gets_asked_and_the_answer_is_exactly_claude_codes
             .await
             .result()
     });
-    let pending = tokio::time::timeout(Duration::from_secs(5), inbox.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let pending = crate::fake::question(&mut inbox).await;
     assert_eq!(pending.question, "¿Ejecuto: ls, guion la, barra vertical, head?");
     pending.answer(Verdict::Allow);
     let result = call.await.unwrap();
@@ -127,10 +124,8 @@ async fn test_the_right_header_gets_asked_and_the_answer_is_exactly_claude_codes
             .await
             .result()
     });
-    tokio::time::timeout(Duration::from_secs(5), inbox.recv())
+    crate::fake::question(&mut inbox)
         .await
-        .unwrap()
-        .unwrap()
         .answer(Verdict::Deny("x".to_owned()));
     let result = call.await.unwrap();
     daemon.stop().await;
@@ -147,11 +142,11 @@ async fn test_a_request_the_listener_cannot_hear_whole_is_denied_with_its_reason
         .call_with("approve", &approve(&"a".repeat(200)), &[(HEADER, TOKEN)])
         .await
         .result();
-    let seen = tokio::time::timeout(Duration::from_millis(150), inbox.recv()).await;
+    let seen = crate::fake::asked(&mut inbox).await;
     daemon.stop().await;
     assert_eq!(behavior(&result)["behavior"], "deny");
     assert!(behavior(&result)["message"].as_str().unwrap().contains("too long"));
-    assert!(seen.is_err());
+    assert!(seen.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -174,9 +169,9 @@ async fn test_bad_approve_arguments_are_a_tool_error_and_nothing_is_asked() {
                 .starts_with("failed to deserialize parameters")
         );
     }
-    let seen = tokio::time::timeout(Duration::from_millis(150), inbox.recv()).await;
+    let seen = crate::fake::asked(&mut inbox).await;
     daemon.stop().await;
-    assert!(seen.is_err());
+    assert!(seen.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -186,10 +181,7 @@ async fn test_a_client_that_goes_away_mid_question_does_not_leave_the_desk_stuck
     let (daemon, mcp) = up(&w).await;
     let asking = mcp.clone();
     let call = tokio::spawn(async move { asking.call_with("approve", &approve("ls"), &[(HEADER, TOKEN)]).await });
-    let held = tokio::time::timeout(Duration::from_secs(5), inbox.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let held = crate::fake::question(&mut inbox).await;
     call.abort();
     held.answer(Verdict::Allow);
     let again = mcp.clone();
@@ -199,10 +191,7 @@ async fn test_a_client_that_goes_away_mid_question_does_not_leave_the_desk_stuck
             .await
             .result()
     });
-    let pending = tokio::time::timeout(Duration::from_secs(5), inbox.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let pending = crate::fake::question(&mut inbox).await;
     assert_eq!(pending.question, "¿Ejecuto: pwd?");
     pending.answer(Verdict::Allow);
     assert_eq!(next.await.unwrap()["content"][0]["text"], r#"{"behavior":"allow"}"#);

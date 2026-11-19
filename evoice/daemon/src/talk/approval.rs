@@ -1,3 +1,4 @@
+use std::fmt::{self, Debug};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -54,14 +55,32 @@ impl Pending {
     }
 }
 
+/// What reaches the conversation from the desk: a question to ask, or word of a request refused without
+/// asking (the conversation counts those, and speaks up when several come in a row).
+#[derive(Debug)]
+pub enum DeskItem {
+    Question(Pending),
+    Refused(String),
+}
+
 /// The conversation that holds the desk: the secret its agent's MCP connection carries, its language and
 /// project, and where its questions go.
-#[derive(Debug)]
 struct Desk {
     token: String,
     lang: Lang,
     cwd: PathBuf,
-    questions: mpsc::Sender<Pending>,
+    questions: mpsc::Sender<DeskItem>,
+}
+
+impl Debug for Desk {
+    /// The secret is never printed: a log line of the state would hand it to anyone who reads the log.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Desk")
+            .field("token", &"<redacted>")
+            .field("lang", &self.lang)
+            .field("cwd", &self.cwd)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Where permission requests meet the voice conversation. One conversation at a time holds the desk; a
@@ -79,13 +98,13 @@ pub struct Approvals {
 /// back, and every request after that is refused.
 #[derive(Debug)]
 pub struct ApprovalInbox {
-    questions: mpsc::Receiver<Pending>,
+    questions: mpsc::Receiver<DeskItem>,
     desk: Arc<Mutex<Option<Desk>>>,
 }
 
 impl ApprovalInbox {
-    /// The next question; `None` once nobody can ask any more.
-    pub async fn recv(&mut self) -> Option<Pending> {
+    /// The next item; `None` once nobody can ask any more. Cancel-safe.
+    pub async fn recv(&mut self) -> Option<DeskItem> {
         self.questions.recv().await
     }
 }
@@ -109,7 +128,7 @@ impl Approvals {
     }
 
     /// Where a request from the holder of `token` goes, with the language and project it is asked in.
-    fn ask_desk(&self, token: Option<&str>) -> Result<(mpsc::Sender<Pending>, Lang, PathBuf), Verdict> {
+    fn ask_desk(&self, token: Option<&str>) -> Result<(mpsc::Sender<DeskItem>, Lang, PathBuf), Verdict> {
         let desk = self.desk.lock().unwrap_or_else(PoisonError::into_inner);
         let held = desk
             .as_ref()
@@ -131,7 +150,7 @@ impl Approvals {
         if desk.is_some() {
             return None;
         }
-        let (questions, inbox) = mpsc::channel(1);
+        let (questions, inbox) = mpsc::channel(4);
         *desk = Some(Desk {
             token,
             lang,
@@ -154,7 +173,10 @@ impl Approvals {
         };
         let question = match ToolQuestion::of(tool, input, lang, &cwd).await {
             Asked::Ask(question) => question,
-            Asked::Refuse(reason) => return Verdict::Deny(reason),
+            Asked::Refuse(reason) => {
+                questions.try_send(DeskItem::Refused(reason.clone())).ok();
+                return Verdict::Deny(reason);
+            }
         };
         let _turn = self.turn.lock().await;
         if self.refusals.load(Ordering::Acquire) != arrived {
@@ -162,7 +184,11 @@ impl Approvals {
         }
         let (reply, answer) = oneshot::channel();
         let gone = || Verdict::Deny("the voice conversation ended".to_owned());
-        if questions.send(Pending { question, reply }).await.is_err() {
+        if questions
+            .send(DeskItem::Question(Pending { question, reply }))
+            .await
+            .is_err()
+        {
             return gone();
         }
         let verdict = match tokio::time::timeout(APPROVE, answer).await {

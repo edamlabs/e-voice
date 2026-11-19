@@ -65,7 +65,7 @@ fn test_stt_tts_and_devices_helps_are_byte_identical_to_main() {
 }
 
 #[test]
-fn test_the_top_level_help_is_main_s_with_exactly_three_lines_appended_after_devices() {
+fn test_the_top_level_help_is_main_s_with_exactly_four_lines_appended_after_devices() {
     let main = unmarked(include_str!("golden/top.txt"));
     let (before, after) = main.split_once("  devices").unwrap();
     let (devices, rest) = after.split_once('\n').unwrap();
@@ -73,11 +73,12 @@ fn test_the_top_level_help_is_main_s_with_exactly_three_lines_appended_after_dev
         "  say      Speak a text through the daemon and wait until it has played",
         "  stop     Silence the daemon's voice and drop every text waiting",
         "  listen   Listen once through the daemon and print what was heard",
+        "  talk     Start or stop a voice conversation with the agent through the daemon",
     ];
     let expected = format!("{before}  devices{devices}\n{}\n{rest}", lines.join("\n"));
     let seen = stdout(&["--help"]);
     assert_eq!(seen, expected);
-    assert_eq!(seen.lines().count(), main.lines().count() + 3);
+    assert_eq!(seen.lines().count(), main.lines().count() + 4);
     assert_eq!(stdout(&["help"]), expected);
 }
 

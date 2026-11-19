@@ -132,6 +132,11 @@ lang = "es"                                  # es | en — what the hooks say wh
 [daemon.voices]
 # lens = "narrator"
 
+[daemon.talk]                                # the voice conversation (POST /talk, ecli talk)
+idle = "60s"                                 # it ends when nobody speaks for this long
+turn = "10m"                                 # one agent turn is cut past this
+answer = "15s"                               # a permission question waits this long for a yes or a no
+
 [daemon.talk.claude]                         # the voice conversation's agent: Claude Code, headless
 bin = "claude"
 # cwd = "…"                                  # the session's project; the daemon's directory when absent

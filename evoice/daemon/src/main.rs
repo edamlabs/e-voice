@@ -11,10 +11,14 @@ use e_voice_daemon::api::state::AppState;
 use e_voice_daemon::core::settings::Settings;
 use e_voice_daemon::hearing::stt::SttHearing;
 use e_voice_daemon::mcp::server::McpServer;
+use e_voice_daemon::schema::event::DaemonEvent;
 use e_voice_daemon::speech::base::Voices;
 use e_voice_daemon::speech::table::VoiceTable;
 use e_voice_daemon::speech::tts::TtsSpeech;
+use e_voice_daemon::talk::agent::claude::ClaudeAgent;
 use e_voice_daemon::talk::approval::Approvals;
+use e_voice_daemon::talk::prompt::TalkPrompt;
+use e_voice_daemon::talk::runner::{Talk, TalkRunner, TalkSetup};
 use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::CaptureThread;
 use e_voice_daemon::workflow::listen::{Listen, Listener};
@@ -55,6 +59,33 @@ struct Cli {
 
 impl Cli {
     // ##### PRIVATE #####
+
+    /// The voice conversation: a fresh headless Claude Code per conversation, reaching the daemon's own MCP
+    /// on loopback, in the configured project (the daemon's directory when none is set).
+    fn run_talk(
+        settings: &Settings,
+        listen: &Arc<dyn Listen>,
+        speech: &SpeechQueue,
+        approvals: Approvals,
+        events: &broadcast::Sender<DaemonEvent>,
+    ) -> Arc<dyn Talk> {
+        let claude = settings.daemon.talk.claude.clone();
+        let mcp = format!("http://127.0.0.1:{}/mcp", settings.daemon.port);
+        let prompt = TalkPrompt::Voice.text(settings.daemon.lang).to_owned();
+        let cwd = claude
+            .cwd
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let setup = TalkSetup {
+            lang: settings.daemon.lang,
+            cwd,
+            config: settings.daemon.talk.clone(),
+        };
+        let make = move |token: String| ClaudeAgent::new(claude.clone(), mcp.clone(), prompt.clone(), token);
+        let (listen, speech, events) = (Arc::clone(listen), speech.clone(), events.clone());
+        Arc::new(TalkRunner::new(make, listen, speech, approvals, events, setup))
+    }
 
     /// Resolves on SIGINT or on `terminate`, the SIGTERM handler installed before the daemon binds: a
     /// daemon its supervisor cannot stop gracefully (systemd sends SIGTERM) refuses to start.
@@ -97,7 +128,16 @@ impl Cli {
                 let subscribers = Arc::new(Semaphore::new(SUBSCRIBERS));
                 let table = VoiceTable::new(settings.daemon.voices.clone());
                 let approvals = Approvals::default();
-                let mcp = McpServer::new(speech.clone(), Arc::clone(&listen), voices, table.clone(), approvals);
+                let desk = approvals.clone();
+                let talk = Self::run_talk(&settings, &listen, &speech, approvals, &events);
+                let mcp = McpServer::new(
+                    speech.clone(),
+                    Arc::clone(&listen),
+                    voices,
+                    table.clone(),
+                    desk,
+                    Arc::clone(&talk),
+                );
                 let state = AppState {
                     speech,
                     listen,
@@ -106,6 +146,7 @@ impl Cli {
                     mcp,
                     table,
                     lang: settings.daemon.lang,
+                    talk,
                 };
                 Server::serve(&settings, state, Self::run_shutdown(terminate)).await?;
             }

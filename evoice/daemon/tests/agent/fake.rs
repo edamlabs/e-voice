@@ -32,7 +32,7 @@ pub const PLACEHOLDER: &str = "00000000-0000-4000-8000-000000000000";
 /// The fake `claude`: records its argv, environment and every stdin line in the directory it runs in, and plays
 /// the files it finds there. `on_start[.N]` at startup; `on_user[.N[.K]]` for the K-th user line of the N-th spawn;
 /// `on_interrupt[.N]` for an interrupt. A played file's lines are written as they are, except the directives
-/// `~SLEEP s`, `~PART text` (no newline), `~CAT file` and `~EXIT`. `grandchild` makes it start a sleeping
+/// `~SLEEP s`, `~PART text` (no newline), `~CAT file`, `~ERR text` (a line on stderr), `~CATERR file`, `~CLOSEIN` (close stdin once the file is played, then stay alive) and `~EXIT`. `grandchild` makes it start a sleeping
 /// process of its own; `trap_term` makes it ignore SIGTERM.
 const SCRIPT: &str = r#"#!/bin/sh
 D=$(pwd)
@@ -53,6 +53,9 @@ play() {
       '~SLEEP '*) sleep "${line#'~SLEEP '}" ;;
       '~PART '*) printf '%s' "${line#'~PART '}" ;;
       '~CAT '*) cat "$D/${line#'~CAT '}" ;;
+      '~ERR '*) printf '%s\n' "${line#'~ERR '}" >&2 ;;
+      '~CATERR '*) cat "$D/${line#'~CATERR '}" >&2 ;;
+      '~CLOSEIN') CLOSE=1 ;;
       '~EXIT') exit 0 ;;
       *) printf '%s\n' "$line" ;;
     esac
@@ -68,6 +71,11 @@ while IFS= read -r line; do
     *)
       u=$((u + 1))
       play "$D/on_user.$n.$u" || play "$D/on_user.$n" || play "$D/on_user"
+      if [ -n "$CLOSE" ]; then
+        exec 0<&-
+        sleep 30
+        exit 0
+      fi
       ;;
   esac
 done

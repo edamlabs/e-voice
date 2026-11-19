@@ -1,9 +1,10 @@
 use std::fmt::{self, Debug};
+use std::sync::Arc;
 use std::time::Duration;
 
 use e_voice_device::error::DeviceError;
 use futures_util::future::BoxFuture;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, OwnedMutexGuard, broadcast};
 use tokio::time::Instant;
 
 use crate::hearing::base::{Heard, Hearing, HearingError, Recognized, Transcription};
@@ -39,6 +40,23 @@ pub enum ListenError {
 pub trait Listen: Debug + Send + Sync {
     /// Listens with `timeout` to start speaking, the listener's default when `None`.
     fn listen(&self, timeout: Option<Duration>) -> BoxFuture<'_, Result<Heard, ListenError>>;
+
+    /// Holds the microphone for a conversation: every other listen is refused until the lease drops.
+    /// `None` while a listen or another lease holds it.
+    fn lease(&self) -> Option<ListenLease>;
+
+    /// One listen under a lease already held, with `timeout` to start speaking.
+    fn listen_leased<'a>(
+        &'a self,
+        lease: &'a ListenLease,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Heard, ListenError>>;
+}
+
+/// The microphone held for a conversation: while it lives, every listen but the holder's is refused.
+#[derive(Debug)]
+pub struct ListenLease {
+    _held: OwnedMutexGuard<()>,
 }
 
 /// Where a listen stands: waiting for someone to start speaking, until the listen's own deadline, or
@@ -77,7 +95,7 @@ pub struct Listener<H> {
     hearing: H,
     capture: CaptureThread,
     timeout: Duration,
-    turn: Mutex<()>,
+    turn: Arc<Mutex<()>>,
     events: broadcast::Sender<DaemonEvent>,
 }
 
@@ -168,6 +186,13 @@ impl<H: Hearing> Listener<H> {
         }
     }
 
+    /// A timeout of zero, or over [`LONGEST`], is no listen.
+    fn common_timeout(timeout: Duration) -> Result<Duration, ListenError> {
+        (!timeout.is_zero() && timeout <= LONGEST)
+            .then_some(timeout)
+            .ok_or(ListenError::Invalid(timeout))
+    }
+
     // ##########################################################
 
     // ##### PUBLIC #####
@@ -180,7 +205,7 @@ impl<H: Hearing> Listener<H> {
             hearing,
             capture,
             timeout,
-            turn: Mutex::new(()),
+            turn: Arc::new(Mutex::new(())),
             events,
         }
     }
@@ -191,12 +216,23 @@ impl<H: Hearing> Listen for Listener<H> {
     /// runs is refused at once, never queued.
     fn listen(&self, timeout: Option<Duration>) -> BoxFuture<'_, Result<Heard, ListenError>> {
         Box::pin(async move {
-            let timeout = timeout.unwrap_or(self.timeout);
-            (!timeout.is_zero() && timeout <= LONGEST)
-                .then_some(())
-                .ok_or(ListenError::Invalid(timeout))?;
+            let timeout = Self::common_timeout(timeout.unwrap_or(self.timeout))?;
             let _turn = self.turn.try_lock().map_err(|_| ListenError::Busy)?;
             self.listen_turn(timeout).await
         })
+    }
+
+    fn lease(&self) -> Option<ListenLease> {
+        let held = Arc::clone(&self.turn).try_lock_owned().ok()?;
+        Some(ListenLease { _held: held })
+    }
+
+    /// The lease proves the microphone is held; there is one listener, so it can only be this one's.
+    fn listen_leased<'a>(
+        &'a self,
+        _lease: &'a ListenLease,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Heard, ListenError>> {
+        Box::pin(async move { self.listen_turn(Self::common_timeout(timeout)?).await })
     }
 }

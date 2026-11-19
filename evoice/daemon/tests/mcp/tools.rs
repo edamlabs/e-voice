@@ -77,7 +77,7 @@ async fn test_the_tool_list_is_pinned_names_descriptions_and_input_schemas() {
         },
         {
             "name": "stop",
-            "description": "Silence what is being said and drop every text waiting: {stopped: id or null, dropped}.",
+            "description": "Silence what is being said and drop every text waiting: {stopped: id or null, dropped}. A voice\nconversation that is thinking, speaking or asking also drops the agent's turn and listens again.",
             "inputSchema": {"properties": {}, "type": "object"}
         }
     ]});

@@ -9,6 +9,8 @@
 mod answer;
 mod approval;
 mod chunker;
+#[path = "../fake/mod.rs"]
+mod fake;
 mod prompt;
 mod property;
 mod question;

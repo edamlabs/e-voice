@@ -390,18 +390,18 @@ impl ClaudeAgent {
             state: Arc::new(Mutex::new(ClaudeState::default())),
         }
     }
+}
+
+impl Agent for ClaudeAgent {
+    type Turn = ClaudeTurn;
 
     /// Ends the session, letting it close for a moment before it is killed.
-    pub async fn close(&self) {
+    async fn close(&self) {
         let session = self.state.lock().await.session.take();
         if let Some(session) = session {
             session.close().await;
         }
     }
-}
-
-impl Agent for ClaudeAgent {
-    type Turn = ClaudeTurn;
 
     /// The first turn starts the session, and a turn after a killed one resumes it by its id. A turn left
     /// unfinished is settled first; one that cannot be, or was not checked at startup yet, ends the session.

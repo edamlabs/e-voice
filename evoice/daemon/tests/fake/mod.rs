@@ -1,4 +1,9 @@
-#![allow(dead_code, clippy::cast_precision_loss)]
+#![allow(
+    dead_code,
+    clippy::cast_precision_loss,
+    clippy::needless_pass_by_value,
+    clippy::unused_async_trait_impl
+)]
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
@@ -399,6 +404,18 @@ impl FakeListen {
 }
 
 impl Listen for FakeListen {
+    fn lease(&self) -> Option<e_voice_daemon::workflow::listen::ListenLease> {
+        None
+    }
+
+    fn listen_leased<'a>(
+        &'a self,
+        _lease: &'a e_voice_daemon::workflow::listen::ListenLease,
+        timeout: Duration,
+    ) -> BoxFuture<'a, Result<Heard, ListenError>> {
+        self.listen(Some(timeout))
+    }
+
     fn listen(&self, timeout: Option<Duration>) -> BoxFuture<'_, Result<Heard, ListenError>> {
         self.calls.lock().unwrap().push(timeout);
         let answered = (self.answer)(timeout);
@@ -642,6 +659,7 @@ pub struct Wired {
     pub mic: Mic,
     pub voices: FakeVoices,
     pub approvals: e_voice_daemon::talk::approval::Approvals,
+    pub script: AgentScript,
 }
 
 pub fn wired(speech: FakeSpeech, device: Device, listen: Duration) -> Wired {
@@ -665,6 +683,7 @@ pub fn wired_with(
         events.clone(),
     ));
     let approvals = e_voice_daemon::talk::approval::Approvals::default();
+    let script = AgentScript::new(approvals.clone());
     let state = state_with(
         queue,
         listener,
@@ -672,6 +691,7 @@ pub fn wired_with(
         voices.clone(),
         table,
         approvals.clone(),
+        script.clone(),
     );
     Wired {
         state,
@@ -681,6 +701,7 @@ pub fn wired_with(
         mic,
         voices,
         approvals,
+        script,
     }
 }
 
@@ -713,13 +734,16 @@ pub fn state(
     listen: Arc<dyn Listen>,
     events: broadcast::Sender<DaemonEvent>,
 ) -> e_voice_daemon::api::state::AppState {
+    let approvals = e_voice_daemon::talk::approval::Approvals::default();
+    let script = AgentScript::new(approvals.clone());
     state_with(
         speech,
         listen,
         events,
         FakeVoices::default(),
         BTreeMap::new(),
-        e_voice_daemon::talk::approval::Approvals::default(),
+        approvals,
+        script,
     )
 }
 
@@ -730,7 +754,9 @@ pub fn state_with(
     voices: FakeVoices,
     table: BTreeMap<String, String>,
     approvals: e_voice_daemon::talk::approval::Approvals,
+    script: AgentScript,
 ) -> e_voice_daemon::api::state::AppState {
+    let talk = default_talk(&speech, &listen, &events, &approvals, &script);
     let table = e_voice_daemon::speech::table::VoiceTable::new(table);
     let mcp = e_voice_daemon::mcp::server::McpServer::new(
         speech.clone(),
@@ -738,6 +764,7 @@ pub fn state_with(
         Arc::new(voices),
         table.clone(),
         approvals,
+        Arc::clone(&talk),
     );
     e_voice_daemon::api::state::AppState {
         speech,
@@ -747,10 +774,313 @@ pub fn state_with(
         mcp,
         table,
         lang: Lang::Es,
+        talk,
     }
 }
 
 /// Every event already on the receiver, in order.
 pub fn drained(receiver: &mut broadcast::Receiver<DaemonEvent>) -> Vec<DaemonEvent> {
     std::iter::from_fn(|| receiver.try_recv().ok()).collect()
+}
+
+///// THE VOICE CONVERSATION /////
+
+#[allow(unused_imports)]
+pub use e_voice_daemon::schema::event::TalkState;
+use e_voice_daemon::talk::agent::base::{Agent, AgentError, Turn};
+pub use e_voice_daemon::talk::approval::Verdict;
+use e_voice_daemon::talk::approval::{ApprovalInbox, Approvals, DeskItem, Pending};
+use e_voice_daemon::talk::runner::{Talk, TalkRunner, TalkSetup};
+
+/// What an agent's turn does, step by step.
+#[derive(Debug, Clone)]
+pub enum Step {
+    Delta(String),
+    Done,
+    Err(AgentError),
+    Wait(Duration),
+    /// Nothing more comes until the turn is cancelled.
+    Block,
+    /// The agent asks for permission (as its MCP `approve` would), without waiting for the answer here.
+    Ask(String, serde_json::Value),
+    /// Wait until this many answers to its questions are in.
+    Verdicts(usize),
+}
+
+pub fn delta(text: &str) -> Step {
+    Step::Delta(text.to_owned())
+}
+
+#[derive(Debug, Default)]
+pub struct AgentLog {
+    pub made: usize,
+    pub tokens: Vec<String>,
+    pub texts: Vec<String>,
+    pub cancels: usize,
+    pub closes: usize,
+    pub verdicts: Vec<Verdict>,
+}
+
+enum Scripted {
+    Steps(Vec<Step>),
+    Fail(AgentError),
+    Hang,
+    Slow(Duration, Vec<Step>),
+}
+
+/// The scripts of the fake agent, one per turn in the order the turns come, and what it saw. A turn with no
+/// script answers "Ok." and is done.
+#[derive(Clone)]
+pub struct AgentScript {
+    turns: Arc<Mutex<VecDeque<Scripted>>>,
+    pub log: Arc<Mutex<AgentLog>>,
+    approvals: Approvals,
+}
+
+impl Debug for AgentScript {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentScript").finish_non_exhaustive()
+    }
+}
+
+impl AgentScript {
+    pub fn new(approvals: Approvals) -> Self {
+        Self {
+            turns: Arc::default(),
+            log: Arc::default(),
+            approvals,
+        }
+    }
+
+    pub fn turn(&self, steps: Vec<Step>) -> &Self {
+        self.turns.lock().unwrap().push_back(Scripted::Steps(steps));
+        self
+    }
+
+    /// The next turn cannot even be started.
+    pub fn fails(&self, error: AgentError) -> &Self {
+        self.turns.lock().unwrap().push_back(Scripted::Fail(error));
+        self
+    }
+
+    /// The next turn never comes back from starting: the agent is stuck where nothing races it.
+    pub fn hangs(&self) -> &Self {
+        self.turns.lock().unwrap().push_back(Scripted::Hang);
+        self
+    }
+
+    /// The next turn takes `delay` to start, where nothing races it, and then runs `steps`.
+    pub fn slow(&self, delay: Duration, steps: Vec<Step>) -> &Self {
+        self.turns.lock().unwrap().push_back(Scripted::Slow(delay, steps));
+        self
+    }
+
+    pub fn make(&self, token: String) -> FakeAgent {
+        let mut log = self.log.lock().unwrap();
+        log.made += 1;
+        log.tokens.push(token.clone());
+        FakeAgent {
+            script: self.clone(),
+            token,
+        }
+    }
+
+    pub fn texts(&self) -> Vec<String> {
+        self.log.lock().unwrap().texts.clone()
+    }
+
+    pub fn cancels(&self) -> usize {
+        self.log.lock().unwrap().cancels
+    }
+
+    pub fn closes(&self) -> usize {
+        self.log.lock().unwrap().closes
+    }
+
+    pub fn verdicts(&self) -> Vec<Verdict> {
+        self.log.lock().unwrap().verdicts.clone()
+    }
+
+    pub fn tokens(&self) -> Vec<String> {
+        self.log.lock().unwrap().tokens.clone()
+    }
+}
+
+pub struct FakeAgent {
+    script: AgentScript,
+    token: String,
+}
+
+pub struct FakeTurn {
+    steps: VecDeque<Step>,
+    script: AgentScript,
+    token: String,
+    ended: bool,
+}
+
+impl Agent for FakeAgent {
+    type Turn = FakeTurn;
+
+    async fn turn(&self, text: String) -> Result<FakeTurn, AgentError> {
+        self.script.log.lock().unwrap().texts.push(text);
+        let scripted = self.script.turns.lock().unwrap().pop_front();
+        match scripted {
+            Some(Scripted::Fail(error)) => Err(error),
+            Some(Scripted::Hang) => std::future::pending().await,
+            Some(Scripted::Slow(delay, steps)) => {
+                tokio::time::sleep(delay).await;
+                Ok(self.start(steps))
+            }
+            Some(Scripted::Steps(steps)) => Ok(self.start(steps)),
+            None => Ok(self.start(vec![delta("Ok. "), Step::Done])),
+        }
+    }
+
+    async fn close(&self) {
+        self.script.log.lock().unwrap().closes += 1;
+    }
+}
+
+impl FakeAgent {
+    fn start(&self, steps: Vec<Step>) -> FakeTurn {
+        FakeTurn {
+            steps: steps.into(),
+            script: self.script.clone(),
+            token: self.token.clone(),
+            ended: false,
+        }
+    }
+}
+
+impl Turn for FakeTurn {
+    async fn next(&mut self) -> Option<Result<e_voice_daemon::talk::agent::base::AgentEvent, AgentError>> {
+        use e_voice_daemon::talk::agent::base::{AgentEvent, Ended};
+        while !self.ended {
+            match self.steps.front() {
+                Some(&Step::Wait(pause)) => tokio::time::sleep(pause).await,
+                Some(&Step::Verdicts(count)) => {
+                    while self.script.log.lock().unwrap().verdicts.len() < count {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                }
+                Some(Step::Block) => std::future::pending::<()>().await,
+                _ => {}
+            }
+            let Some(step) = self.steps.pop_front() else {
+                self.ended = true;
+                return None;
+            };
+            match step {
+                Step::Delta(text) => return Some(Ok(AgentEvent::Delta(text))),
+                Step::Done => {
+                    self.ended = true;
+                    return Some(Ok(AgentEvent::Done(Ended::Answered)));
+                }
+                Step::Err(error) => {
+                    self.ended = true;
+                    return Some(Err(error));
+                }
+                Step::Wait(_) | Step::Block | Step::Verdicts(_) => {}
+                Step::Ask(tool, input) => {
+                    let (approvals, token, log) = (
+                        self.script.approvals.clone(),
+                        self.token.clone(),
+                        Arc::clone(&self.script.log),
+                    );
+                    tokio::spawn(async move {
+                        let verdict = approvals.ask(Some(&token), &tool, &input).await;
+                        log.lock().unwrap().verdicts.push(verdict);
+                    });
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+        }
+        None
+    }
+
+    async fn cancel(&mut self) -> Result<(), AgentError> {
+        self.script.log.lock().unwrap().cancels += 1;
+        self.ended = true;
+        Ok(())
+    }
+}
+
+fn default_talk(
+    speech: &SpeechQueue,
+    listen: &Arc<dyn Listen>,
+    events: &broadcast::Sender<DaemonEvent>,
+    approvals: &Approvals,
+    script: &AgentScript,
+) -> Arc<dyn Talk> {
+    let setup = TalkSetup {
+        lang: Lang::Es,
+        cwd: std::path::PathBuf::from("/nonexistent-project"),
+        config: e_voice_daemon::config::talk::TalkConfig::default(),
+    };
+    let script = script.clone();
+    Arc::new(TalkRunner::new(
+        move |token| script.make(token),
+        Arc::clone(listen),
+        speech.clone(),
+        approvals.clone(),
+        events.clone(),
+        setup,
+    ))
+}
+
+/// A conversation runner over the wired daemon's own queue, listener, desk and bus, with the bounds and
+/// language given.
+pub fn talk(w: &Wired, lang: Lang, idle: Duration, turn: Duration, answer: Duration) -> Arc<dyn Talk> {
+    let setup = TalkSetup {
+        lang,
+        cwd: std::path::PathBuf::from("/nonexistent-project"),
+        config: e_voice_daemon::config::talk::TalkConfig {
+            idle,
+            turn,
+            answer,
+            ..e_voice_daemon::config::talk::TalkConfig::default()
+        },
+    };
+    let script = w.script.clone();
+    Arc::new(TalkRunner::new(
+        move |token| script.make(token),
+        Arc::clone(&w.state.listen),
+        w.state.speech.clone(),
+        w.approvals.clone(),
+        w.events.clone(),
+        setup,
+    ))
+}
+
+/// The next question of the desk, skipping the requests it reports as refused unasked.
+pub async fn question(inbox: &mut ApprovalInbox) -> Pending {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match tokio::time::timeout(left, inbox.recv())
+            .await
+            .expect("no question in time")
+            .expect("an item")
+        {
+            DeskItem::Question(pending) => return pending,
+            DeskItem::Refused(_) => {}
+        }
+    }
+}
+
+/// The first question that reaches the desk within `patience`, if one does.
+pub async fn asked_within(inbox: &mut ApprovalInbox, patience: Duration) -> Option<Pending> {
+    let deadline = Instant::now() + patience;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match tokio::time::timeout(left, inbox.recv()).await {
+            Ok(Some(DeskItem::Question(pending))) => return Some(pending),
+            Ok(Some(DeskItem::Refused(_))) => {}
+            Ok(None) | Err(_) => return None,
+        }
+    }
+}
+
+pub async fn asked(inbox: &mut ApprovalInbox) -> Option<Pending> {
+    asked_within(inbox, Duration::from_millis(150)).await
 }

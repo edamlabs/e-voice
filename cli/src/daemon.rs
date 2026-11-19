@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clap::Args;
+use reqwest::Method;
 use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -42,10 +43,10 @@ pub struct DaemonClient {
 }
 
 impl DaemonClient {
-    /// POSTs `body` to `path` and reads the answer as `T`. A refusal carries the daemon's own `error`, or
-    /// the raw body when it is not the daemon's shape (axum's own rejections). No request timeout: a say
-    /// lasts as long as its speech, and the daemon bounds a listen itself.
-    async fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T, DaemonError> {
+    /// Sends `body` to `path` with `method` and reads the answer as `T`. A refusal carries the daemon's own
+    /// `error`, or the raw body when it is not the daemon's shape (axum's own rejections). No request
+    /// timeout: a say lasts as long as its speech, and the daemon bounds a listen itself.
+    async fn call<T: DeserializeOwned>(&self, method: Method, path: &str, body: &Value) -> Result<T, DaemonError> {
         let connect = |source| DaemonError::Connect {
             url: self.url.clone(),
             source,
@@ -55,7 +56,7 @@ impl DaemonClient {
             .build()
             .map_err(connect)?;
         let response = http
-            .post(format!("{}{path}", self.url.trim_end_matches('/')))
+            .request(method, format!("{}{path}", self.url.trim_end_matches('/')))
             .header(CONTENT_TYPE, "application/json")
             .body(body.to_string())
             .send()
@@ -103,7 +104,7 @@ impl SayArgs {
     /// The daemon is unreachable, refused the request, or answered in a shape it does not have.
     pub async fn run(self) -> Result<(), DaemonError> {
         let body = json!({"text": self.text, "voice": self.voice, "lang": self.lang});
-        let spoken: Spoken = self.daemon.post("/speak", &body).await?;
+        let spoken: Spoken = self.daemon.call(Method::POST, "/speak", &body).await?;
         println!("{} {}", spoken.outcome, spoken.id);
         Ok(())
     }
@@ -121,7 +122,7 @@ impl StopArgs {
     /// # Errors
     /// The daemon is unreachable, refused the request, or answered in a shape it does not have.
     pub async fn run(self) -> Result<(), DaemonError> {
-        let halted: Halted = self.daemon.post("/stop", &json!({})).await?;
+        let halted: Halted = self.daemon.call(Method::POST, "/stop", &json!({})).await?;
         match halted.stopped {
             Some(id) => println!("stopped {id}, dropped {}", halted.dropped),
             None => println!("nothing playing"),
@@ -149,7 +150,7 @@ impl ListenArgs {
     /// The daemon is unreachable, refused the request, or answered in a shape it does not have.
     pub async fn run(self) -> Result<(), DaemonError> {
         let body = json!({"timeout": self.timeout});
-        let heard: Value = self.daemon.post("/listen", &body).await?;
+        let heard: Value = self.daemon.call(Method::POST, "/listen", &body).await?;
         let text = heard
             .get("text")
             .and_then(Value::as_str)
@@ -157,6 +158,45 @@ impl ListenArgs {
         let structured = self.structured;
         let line: String = if structured { heard.to_string() } else { text.into() };
         println!("{line}");
+        Ok(())
+    }
+}
+
+/// What `ecli talk` does to the voice conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum TalkAction {
+    Start,
+    Stop,
+}
+
+/// The conversation's state, as the daemon answers it.
+#[derive(Debug, Deserialize)]
+struct Talking {
+    state: String,
+}
+
+#[derive(Debug, Args)]
+pub struct TalkArgs {
+    /// `start` (the default) or `stop`.
+    #[arg(value_enum, default_value_t = TalkAction::Start)]
+    action: TalkAction,
+    #[command(flatten)]
+    daemon: DaemonClient,
+}
+
+impl TalkArgs {
+    /// Prints the conversation's state after the request: `listening` once started, `idle` once stopped.
+    ///
+    /// # Errors
+    /// The daemon is unreachable, refused the request (a conversation already runs, or the microphone is
+    /// held), or answered in a shape it does not have.
+    pub async fn run(self) -> Result<(), DaemonError> {
+        let method = match self.action {
+            TalkAction::Start => Method::POST,
+            TalkAction::Stop => Method::DELETE,
+        };
+        let talking: Talking = self.daemon.call(method, "/talk", &json!({})).await?;
+        println!("{}", talking.state);
         Ok(())
     }
 }

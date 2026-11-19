@@ -9,6 +9,7 @@
 
 mod approve;
 mod client;
+mod debug;
 #[path = "../fake/mod.rs"]
 mod fake;
 #[path = "../api/http.rs"]

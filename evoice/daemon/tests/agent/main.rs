@@ -10,5 +10,6 @@ mod argv;
 mod cancel;
 mod fake;
 mod init;
+mod process;
 mod session;
 mod stream;

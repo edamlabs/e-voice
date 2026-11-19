@@ -35,6 +35,9 @@ pub trait Agent: Send + Sync + 'static {
     /// Sends one user turn; the reply arrives through the returned turn. One turn at a time: a second
     /// waits until the first is dropped.
     fn turn(&self, text: String) -> impl Future<Output = Result<Self::Turn, AgentError>> + Send;
+
+    /// Ends the agent's session, if one runs, letting it close before it is stopped.
+    fn close(&self) -> impl Future<Output = ()> + Send;
 }
 
 /// One turn being answered.
