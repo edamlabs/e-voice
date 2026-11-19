@@ -34,6 +34,16 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     (`es` by default) is the notices' language and the fallback. Guide: `docs/guide/claude.md`, with the
     `settings.json` snippet and dictation by a desktop shortcut over `ecli listen` (press-to-start; hold-to-talk
     is not built).
+  - The voice conversation (TODO_vehicle step 10): `POST /talk` and `DELETE /talk`, `ecli talk`. Half-duplex with
+    a headless Claude Code: it listens, the agent answers aloud sentence by sentence (fenced code never said), and
+    listens again; «adiós» / «goodbye» alone ends it, and so do `[daemon.talk] idle` (60 s) and `turn` (10 min).
+    The session is always isolated from the user's Claude Code settings and has only the tools named in
+    `[daemon.talk.claude] tools`. Permissions are asked aloud through the MCP tool `approve`, which answers only
+    that conversation's agent: only what is read aloud whole and faithfully can be approved — every symbol named,
+    over 160 characters or several lines refused unasked; silence or an unclear answer is a no. The microphone is
+    the conversation's while it runs. One stop for every door: `/stop` and the MCP `stop` tool cut the voice at
+    once, drop the agent's turn and listen again; a halted turn can queue nothing after. The talk states on
+    `/events`. Guide: `docs/guide/claude.md`.
   - Evidence: every endpoint proven against scripted TTS and STT servers and fake devices, the MCP tools with a
     real client; the spoken digest held to its properties over 4000 generated inputs — every character a letter, a
     digit, a space or speakable punctuation; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage`
@@ -73,9 +83,16 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 - README: badge layout, landscape logo and description standardized on the EDamLabs template.
 - Dependencies: Renovate replaces Dependabot. Routine updates (images, toolchain, actions, lock files, the benchmark's
   Python tooling, Rust patch releases) merge themselves once every required check passes; Rust minor and major
-  updates wait for a human.
+  updates wait for a human. `tungstenite` in the services and the daemon never moves alone: it is pinned to the
+  one axum resolves.
 
 ### Fixed
+
+- Renovate #28 broke `main`: `tungstenite` moved to 0.30 in stt and tts, away from axum's 0.29, so an oversized
+  WebSocket message closed 1000 instead of 1009; the pin is back. `ort` 2.0.0-rc.15 holds the ONNX Runtime
+  environment weakly: it is now kept for the life of the process and handed to every session (NeuTTS, Pocket,
+  Qwen3, emotion2vec, openWakeWord). Evidence: the 1009 frame tests green again (stt 11, tts 4, the daemon's
+  `/events`); 54 of 54 model-backed tests with real models; the three runtime images build.
 
 - STT batch (TODO_vehicle step 1): a file run never sheds a segment. One 1 s chunk carrying several
   utterances met the live overload policy and answered «N segment(s) failed: dropped under load» on long uploads.
