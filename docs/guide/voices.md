@@ -1,7 +1,10 @@
 # Voices
 
 A voice is learned from audio of one speaker and then used by id everywhere (`voice=damien`). Learning
-is the backend's `train`; with Pocket TTS it is zero-shot cloning, so it takes seconds, not a GPU.
+is the backend's `train`; with Pocket TTS it is zero-shot cloning, so it takes seconds, not a GPU. It is
+cloning, not training: nothing is fine-tuned, and the TTS keeps at most 30 s of the clip. Every backend needs a
+voice before it speaks — Qwen3, the package's default, and Pocket alike — so set `[tts] voice` once you have one.
+An id is 1–64 characters of `a-z`, `0-9`, `-` or `_`.
 
 ## Learn one
 
@@ -20,7 +23,13 @@ ecli voice add damien2                 # shows a ~25 s text to read; Enter start
 ecli voice add damien2 --lang en       # the English text
 ecli voice add damien2 --text "…"      # read your own text; it is stored as the transcript
 ecli voice add damien --replace        # an existing voice is refused unless replaced
+ecli voice add me --silence 4s --max 25s   # how long a pause ends it; the longest clip (humantime, at most 30 s)
+ecli voice add me --url http://host:5700   # another daemon (env ECLI_DAEMON_URL)
 ```
+
+`--replace` overwrites the stored voice in place and the service picks the new one up at once, without a restart;
+keep a copy of `<data>/voices/<id>.safetensors` if you may want the old one back. To compare, record under another
+id first and `ecli say --voice <id> "…"` both.
 
 It records from the moment you start speaking until 2.5 s of silence (`--silence`), 30 s (`--max`, the most the
 TTS keeps) or Enter, trims the silence at both ends by the STT's own speech bounds, sends the clip with its text to

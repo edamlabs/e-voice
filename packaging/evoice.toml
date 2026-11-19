@@ -1,0 +1,15 @@
+##### E-VOICE #####
+# Your configuration: copied here on the first start of a service and never overwritten after. Edit it,
+# then `systemctl --user restart evoice-stt evoice-tts evoiced`. Every key absent here takes its default;
+# all of them, with the accepted values, are in evoice.example.toml under share/doc/evoice
+# (/usr/share/doc/evoice for the .deb).
+# Models, learned voices and this file live under ~/.config/evoice.
+
+##### TTS #####
+# [tts]
+# voice = "damien"                           # Qwen3 clones a voice: learn one first (`ecli voice` or `e-voice-tts voice add`)
+
+[tts.synth]
+backend = "qwen3"                            # the one backend whose weights `pull` downloads publicly
+workers = 2                                  # concurrent streams per language
+threads = 4                                  # onnxruntime threads per stream

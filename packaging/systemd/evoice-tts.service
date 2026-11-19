@@ -1,0 +1,17 @@
+[Unit]
+Description=e-voice TTS: the text-to-speech gateway (:5600)
+Documentation=https://github.com/edamlabs/e-voice
+
+[Service]
+Environment=EVOICE_TTS__OPS__DATA=%h/.config/evoice/tts
+Environment=EVOICE_TTS__OPS__MANIFEST=@SHARE@/tts/models.toml
+ExecStartPre=mkdir -p %h/.config/evoice/tts
+ExecStartPre=cp -n @SHARE@/evoice.toml %h/.config/evoice/evoice.toml
+ExecStartPre=@BIN@/e-voice-tts --config %h/.config/evoice/evoice.toml pull
+ExecStart=@BIN@/e-voice-tts --config %h/.config/evoice/evoice.toml serve
+TimeoutStartSec=infinity
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

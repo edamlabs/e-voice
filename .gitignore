@@ -2,6 +2,7 @@
 !/data/.gitkeep
 .env
 evoice.toml
+!/packaging/evoice.toml
 __pycache__/
 .pytest_cache/
 .ruff_cache/

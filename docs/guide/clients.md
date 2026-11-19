@@ -54,7 +54,24 @@ Use its OpenAI speech-to-text provider with `stt.openai.base_url = "http://127.0
 
 ## ecli
 
-The bundled terminal tester streams the microphone (or a WAV in real time) to `/v1/stream`:
+The bundled terminal client. `stt` and `tts` talk straight to the services; `say`, `stop`, `listen`, `talk` and
+`voice` talk to the [voice daemon](daemon.md).
+
+| Command | Does | Address |
+|---|---|---|
+| `ecli stt` | streams the microphone (or a WAV) to the STT service | `--url`, `ECLI_STT_URL`, `ws://127.0.0.1:5500` |
+| `ecli tts` | synthesises text to the speaker or a file | `--url`, `ECLI_TTS_URL`, `ws://127.0.0.1:5600` |
+| `ecli devices` | lists the input devices | |
+| `ecli say <text> [--voice] [--lang]` | speaks through the daemon; prints `done <id>` or `cancelled <id>` | `--url`, `ECLI_DAEMON_URL`, `http://127.0.0.1:5700` |
+| `ecli stop` | silences the daemon; prints `stopped <id>, dropped <n>` or `nothing playing` | same |
+| `ecli listen [--struct] [--timeout 8s]` | listens once, prints the text (`--struct`: text, language, emotion as JSON) | same |
+| `ecli talk [start\|stop]` | starts or ends a voice conversation with Claude Code | same |
+| `ecli voice add <id> [--text] [--lang es\|en] [--silence] [--max] [--replace]` | records a voice | same, see [Voices](voices.md) |
+
+`ecli devices` lists inputs only. The daemon's `[daemon] output` and `input` match a device by a part of its
+name; the system default is used when they are unset.
+
+The terminal tester streams the microphone (or a WAV in real time) to `/v1/stream`:
 
 ```bash
 ecli devices                                   # inputs; * marks the system default
@@ -64,7 +81,9 @@ ecli stt --flat --wav sample.wav               # replay a file instead of a micr
 ecli stt --url ws://host:5500                  # another gateway
 ```
 
-`make stt ARGS="…"` runs it from the repository.
+`make stt ARGS="…"` runs it from the repository. The Makefile exports `ECLI_STT_URL=ws://127.0.0.1:45140` and
+`ECLI_TTS_URL=ws://127.0.0.1:45150` (the ports of the author's compose); set them in `.env` or the shell for
+the default 5500 and 5600.
 
 On Linux, inputs come from PulseAudio (served by PipeWire), so device names match the system's sound
 settings. `ecli` warns about two common mistakes:

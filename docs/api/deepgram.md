@@ -2,7 +2,7 @@
 
 | Parameter | Values |
 |---|---|
-| `model` | any (accepted for compatibility) |
+| `model` | an engine name or model id selects a loaded engine on prerecorded requests ([choosing the engine](index.md#choosing-the-engine)); any other value uses the default; live sockets use the live backend |
 | `language` | `es`, `en` (regions accepted) |
 | `encoding` | live: `linear16` (default), `pcm_f32le` |
 | `sample_rate` | live: rate of the raw audio, 16000 by default |
@@ -24,7 +24,8 @@ The response follows Deepgram's shape:
 `results.utterances[]` entry, when `[stt.pipeline.diarize]` is on; while it is off the parameter is ignored. `words`
 stays empty: word-level timing is not produced. Live audio carries no speakers.
 
-Errors use `{"err_code", "err_msg", "request_id"}`.
+Errors use `{"err_code", "err_msg", "request_id"}`. A body over `[stt.api] upload` or audio past
+`[stt.api] duration` is 413 in that shape.
 
 ## Live
 

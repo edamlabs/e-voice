@@ -31,6 +31,7 @@ transcribe what they hear.
 | lid | `whisper` | Whisper tiny | MIT |
 | ser | `emotion2vec` | emotion2vec+ base (768-dim) | FunASR model licence |
 | ser | `emotion2vec-large` | emotion2vec+ large (1024-dim), local export | FunASR model licence |
+| diarize | `sherpa` | pyannote segmentation 3.0 + WeSpeaker ResNet34-LM (default), CAM++ or ERes2Net embeddings; offline clustering, uploaded files only | MIT, CC-BY-4.0 (check each card) |
 
 ### Considered and not added
 
@@ -41,7 +42,8 @@ transcribe what they hear.
 | Qwen3-ASR, Omnilingual ASR | weaker on Spanish for their CPU cost |
 | Canary 1B v2 | no sherpa export published |
 | microWakeWord | TFLite only |
-| Diarization, livekit-wakeword | later |
+| livekit-wakeword | later |
+| pyannote community-1, diart | not in sherpa-onnx, ort or Rust; the diarization node is sherpa's own pipeline ([measured](history/2026-11-diarization.md)) |
 
 ### Adding a backend
 
@@ -75,6 +77,12 @@ so one stream runs at about real time.
 NeuTTS needs the neuphonic terms accepted on Hugging Face (backbones and decoder are gated), `espeak-ng`
 installed (`make system`), and `make neutts` to export the backbones. Its model-backed verification is
 pending that access; the pure parts (phonemizer punctuation runs, overlap-add) are unit-tested.
+
+!!! warning
+    NeuTTS cannot be selected today: its manifest entries (`neutts-es`, `neutts-en`) were never pasted into
+    `evoice/tts/models.toml` — the exporter (`eval/export/neutts.py`) prints them to stdout, as Pocket's were
+    — so `make neutts` ends in a `pull` of ids the manifest does not know, and `backend = "neutts"` cannot
+    load. Even once added they would be `file://` exports like Pocket's, which no package or image carries.
 
 | | Pocket base | Qwen3 (x-vector) |
 |---|---|---|

@@ -199,3 +199,37 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  package:
+    name: package · evoice .deb + tarball
+    if: vars.PUBLISH_PACKAGE == 'true' && needs.bump.outputs.full != ''
+    needs: bump
+    # The oldest supported runner: its glibc is the floor the package declares, so 22.04 and 24.04 both install it.
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.bump.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.bump.outputs.ref }}
+          persist-credentials: false
+      - name: build the .deb and the tarball
+        run: E_VOICE_VERSION="$VERSION" make system toolchain sherpa package
+      - name: smoke-install the .deb, every binary reports the version
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y --no-install-recommends "./data/ops/package/evoice_${VERSION}_amd64.deb"
+          for bin in e-voice e-voice-tts evoiced ecli; do
+            reported="$("$bin" --version)"
+            echo "$reported"
+            [ "${reported##* }" = "$VERSION" ]
+          done
+      - name: attach both to the full-v<version> release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "full-v${VERSION}" --repo "$GITHUB_REPOSITORY" \
+            "data/ops/package/evoice_${VERSION}_amd64.deb" \
+            "data/ops/package/evoice-${VERSION}-linux-x86_64.tar.gz"

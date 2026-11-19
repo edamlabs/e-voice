@@ -8,6 +8,19 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Added
 
+- Native Ubuntu packages (TODO_VOICE-HELM_native): a release that includes `full` attaches a `.deb` and a tarball
+  for Linux x86_64 to its `full-vX.Y.Z` GitHub release, built on Ubuntu 22.04 (glibc 2.34 floor) behind
+  `vars.PUBLISH_PACKAGE`. They carry `e-voice`, `e-voice-tts`, `evoiced` and `ecli`, the sherpa-onnx and ONNX Runtime
+  libraries, the manifests and three systemd user units (`evoice-stt`, `evoice-tts`, `evoiced`). Everything the
+  installation writes lives under `~/.config/evoice/` — config, models, voices; the default config selects Qwen3
+  (public weights) and is copied on first start, never overwritten. `make package` builds both, reproducibly;
+  `ecli --version` now reports the release. Evidence: installed, run and removed in clean Ubuntu 22.04 and 24.04
+  containers (`systemd-analyze --user verify`, `/health`, `pull` resolving `qwen3-tts`); two builds, one sha256;
+  workspace 843 passed; `make coverage` 92.39 %.
+- Documentation brought up to date against the code: the voice daemon, what it is for, requirements (ports, paths,
+  disk, memory, cores), every configuration table with what is checked, `ecli`'s eight commands, the daemon and
+  diarization in the architecture, model sizes, the API pages' limits and `model` field; `openapi-tts.json`
+  regenerated (it lacked 413 and 422). Four decision records.
 - `ecli voice add <id>` (TODO_VOICE-HELM_clone): a voice learned from a text read aloud. The daemon records from its
   microphone (`POST /voices`; busy while a conversation or a listen holds it) until 2.5 s of silence after speech,
   30 s — the most the TTS keeps — or `POST /voices/finish` (Enter in `ecli`); the clip is cut to the STT's speech
@@ -97,6 +110,8 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Fixed
 
+- `[stt.pipeline.diarize]` is range-checked like every other node: `threads` ≥ 1, `threshold` finite and positive,
+  `speakers` ≥ 1 when set (a zero used to reach the node). The «four tools» note of the MCP server says five.
 - Renovate #28 broke `main`: `tungstenite` moved to 0.30 in stt and tts, away from axum's 0.29, so an oversized
   WebSocket message closed 1000 instead of 1009; the pin is back. `ort` 2.0.0-rc.15 holds the ONNX Runtime
   environment weakly: it is now kept for the life of the process and handed to every session (NeuTTS, Pocket,

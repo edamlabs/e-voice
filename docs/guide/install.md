@@ -1,5 +1,59 @@
 # Install
 
+## Ubuntu package
+
+Every release publishes, on its `full-v<version>` GitHub release, a `.deb` and a tarball for Linux x86_64 with
+the four binaries (`e-voice`, `e-voice-tts`, `evoiced`, `ecli`), the sherpa-onnx and ONNX Runtime libraries they
+load (CPU), the model manifests and three systemd user units. Built on Ubuntu 22.04: it runs on 22.04 and later.
+
+```bash
+gh release download full-v<version> -R edamlabs/e-voice -p 'evoice_*_amd64.deb'
+sudo apt install ./evoice_<version>_amd64.deb
+systemctl --user enable --now evoice-stt evoice-tts evoiced
+```
+
+The units run as you, not as root — the daemon needs your audio session. Everything the package writes lives
+under `~/.config/evoice/`:
+
+| What | Where |
+|---|---|
+| Configuration | `~/.config/evoice/evoice.toml` — copied from `/usr/share/evoice/evoice.toml` on first start and never overwritten; every key is in `/usr/share/doc/evoice/evoice.example.toml` |
+| Speech-to-text models | `~/.config/evoice/stt` |
+| Text-to-speech models and voices | `~/.config/evoice/tts` |
+| Ports | STT `5500`, TTS `5600`, daemon `127.0.0.1:5700` |
+| Logs | `journalctl --user -u evoice-stt -u evoice-tts -u evoiced` |
+
+Each service's `pull` downloads its models before it serves, so the first start takes as long as the download:
+about 1.65 GB for the default speech-to-text set and 3.6 GB for the package's text-to-speech model, Qwen3 (the
+package's default config selects it because its weights are public; the code default, Pocket, needs local exports
+of a gated checkpoint). [Requirements](requirements.md) has every size.
+
+**Qwen3 speaks only in a voice you have learned**, so before the first synthesis, once `evoiced` is up:
+
+```bash
+ecli voice add me                  # read the text on screen; Enter starts and finishes
+```
+
+then set it as the default in `~/.config/evoice/evoice.toml` and restart the TTS:
+
+```toml
+[tts]
+voice = "me"
+```
+
+```bash
+systemctl --user restart evoice-tts
+ecli say "Hola, esta es mi voz."
+```
+
+Without apt, the tarball holds the same files and a five-line README: unpack under `~/.local/opt`, put its `bin/`
+on the PATH, copy its units to `~/.config/systemd/user/`. To remove the package: `sudo apt remove evoice`; your
+`~/.config/evoice/` stays until you delete it.
+
+What the installation is for, and what each part serves: [What it is for](uses.md).
+
+## From source
+
 ```bash
 make install
 ```

@@ -49,6 +49,34 @@ with `lomotron/pocket-tts-onnx-export@8f52199` (five graphs, fp32 + dynamic int8
 | `pocket-es-24l` | `languages/spanish_24l` | 24 layers |
 | `pocket-en` | `languages/english_2026-09` (6 layers) | as `pocket-es` |
 
+## Sizes on disk
+
+As installed under `data/<service>/models` (the package keeps them in `~/.config/evoice/{stt,tts}`):
+
+| Model | Disk |
+|---|---|
+| silero-vad / ten-vad | 0.6 MB / 0.3 MB |
+| gtcrn (denoise) | 0.5 MB |
+| kws-gigaspeech / oww-hey-jarvis | 20 MB / 3.6 MB |
+| whisper-tiny (language ID) / whisper-turbo | 245 MB / 990 MB |
+| nemotron-3.5 (each chunk size) | 653 MB |
+| parakeet-v3-int8 | 641 MB |
+| canary-180m | 198 MB |
+| cohere-transcribe | 2.7 GB |
+| kroko-es / kroko-en | 149 MB / 68 MB |
+| emotion2vec-plus-base / large | 357 MB / 620 MB |
+| pyannote-segmentation-3.0 | 7.3 MB |
+| wespeaker-resnet34-lm / campplus / eres2net | 26 MB / 27 MB / 26 MB |
+| pocket-es / pocket-en / pocket-es-24l | 524 MB / 524 MB / 1.6 GB |
+| qwen3-tts | 3.6 GB |
+| neucodec-encoder | 495 MB |
+
+The manifests carry no size field; the figures above are `du` of the installed folders. Memory and cores:
+[Requirements](guide/requirements.md).
+
+`e-voice-tts` has its own `pull` and `verify`, as `e-voice` does: `e-voice-tts pull` installs the models of the
+configured backend (Qwen3's are public downloads), `e-voice-tts verify --full` re-hashes them.
+
 ### Gated checkpoints
 
 Pocket TTS (`kyutai/pocket-tts`) is gated on Hugging Face: its terms (CC-BY-4.0 weights; no voice

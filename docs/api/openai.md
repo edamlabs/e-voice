@@ -7,7 +7,7 @@
 | Field | Values |
 |---|---|
 | `file` | wav, mp3, m4a, flac, ogg, opus, webm |
-| `model` | any (accepted for compatibility) |
+| `model` | an engine name or model id selects a loaded engine ([choosing the engine](index.md#choosing-the-engine)); any other value uses the default |
 | `language` | `es`, `en` |
 | `response_format` | `json` (default), `text`, `srt`, `vtt`, `verbose_json`, `diarized_json` |
 | `stream` | `true` → server-sent events |
@@ -26,6 +26,9 @@
   `transcript.text.segment` per segment before `transcript.text.done`. `verbose_json` never carries speakers.
 - **`stream=true`:** one `transcript.text.delta` per final, then `transcript.text.done` with `usage`.
 - **Errors:** OpenAI's shape, `{"error": {"message", "type", "param", "code"}}`.
+- **Limits:** a body over `[stt.api] upload` (25 MiB) and audio that decodes to more than `[stt.api] duration`
+  (4 h) are 413; a sample rate over 384 kHz is refused. The same limits hold on every STT route, each in its own
+  error shape.
 - **Failure policy:** a request whose segments fail is a 500, never silently partial text.
 
 ## Realtime

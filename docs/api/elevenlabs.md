@@ -5,7 +5,7 @@
 | Field | Values |
 |---|---|
 | `file` | any supported container |
-| `model_id` | any (accepted for compatibility) |
+| `model_id` | an engine name or model id selects a loaded engine ([choosing the engine](index.md#choosing-the-engine)); any other value uses the default |
 | `language_code` | `es`/`en` or `spa`/`eng` |
 | `emotion` | `field`, `tag`, `off` (extension) |
 
@@ -19,4 +19,5 @@ Response:
 - `diarize=true` adds `speaker_id` (`speaker_0`, `speaker_1`, … in order of first appearance) to each `words`
   entry, when `[stt.pipeline.diarize]` is on; while it is off the field is ignored. `num_speakers` and
   `diarization_threshold` are accepted and ignored.
-- Errors use `{"detail": {"status", "message"}}`.
+- Errors use `{"detail": {"status", "message"}}`; a body over `[stt.api] upload` or audio past `[stt.api] duration`
+  is 413 in that shape.

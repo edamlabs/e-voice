@@ -1,0 +1,15 @@
+Package: evoice
+Version: @VERSION@
+Architecture: amd64
+Maintainer: Damien Volkov <58026317+damvolkov@users.noreply.github.com>
+Installed-Size: @SIZE@
+Depends: libc6 (>= @GLIBC@), libgcc-s1, libstdc++6, libasound2t64 | libasound2, espeak-ng, ca-certificates
+Section: sound
+Priority: optional
+Homepage: https://github.com/edamlabs/e-voice
+Description: CPU-first speech services: streaming STT and TTS, voice daemon and CLI
+ Streaming speech-to-text with emotion on every segment (e-voice) and streaming
+ text-to-speech that speaks in a learned voice (e-voice-tts), behind
+ OpenAI-compatible APIs; the local voice daemon with MCP (evoiced) and the
+ terminal client (ecli). Runs as systemd user units: evoice-stt, evoice-tts,
+ evoiced.
