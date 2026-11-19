@@ -1,0 +1,1 @@
+{"type":"result","subtype":"error_during_execution","is_error":true,"duration_api_ms":0,"stop_reason":null,"session_id":"00000000-0000-4000-8000-000000000000","total_cost_usd":0,"usage":{"input_tokens":0,"output_tokens":0},"permission_denials":[],"terminal_reason":"tool_error","num_turns":1,"result":"boom","uuid":"00000000-0000-4000-8000-000000000020"}

@@ -131,3 +131,9 @@ lang = "es"                                  # es | en — what the hooks say wh
                                              # its declared name counts only when each request carries it (2026-07-28+)
 [daemon.voices]
 # lens = "narrator"
+
+[daemon.talk.claude]                         # the voice conversation's agent: Claude Code, headless
+bin = "claude"
+# cwd = "…"                                  # the session's project; the daemon's directory when absent
+# model = "…"                                # Claude Code's default when absent
+tools = ["Read", "Bash", "Edit", "Write"]    # the only tools that exist in it; all but reading ones are asked aloud

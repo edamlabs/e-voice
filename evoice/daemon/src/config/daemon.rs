@@ -5,6 +5,8 @@ use std::time::Duration;
 use e_voice_core::schema::lang::Lang;
 use serde::{Deserialize, Serialize};
 
+use crate::config::talk::TalkConfig;
+
 /// The daemon's own table. `host` is never `[server] host`: the daemon owns the audio devices, so it
 /// listens on loopback unless told otherwise. `tts` and `stt` are the services' WebSocket bases; `output`
 /// and `input` pick a device by a part of its name, the system default when absent; `listen` is how long
@@ -12,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// when a call names none: by its `X-Evoice-Client` header, which every client can send, else by the name
 /// it declares, which counts only when the request itself carries it (protocol 2026-07-28 and later).
 /// `lang` is the fallback language of what the hooks say: the notices, and a message whose language its
-/// words do not decide.
+/// words do not decide; it is also the voice conversation's language. `talk` is that conversation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DaemonConfig {
@@ -26,6 +28,7 @@ pub struct DaemonConfig {
     pub listen: Duration,
     pub voices: BTreeMap<String, String>,
     pub lang: Lang,
+    pub talk: TalkConfig,
 }
 
 impl Default for DaemonConfig {
@@ -40,6 +43,7 @@ impl Default for DaemonConfig {
             listen: Duration::from_secs(15),
             voices: BTreeMap::new(),
             lang: Lang::Es,
+            talk: TalkConfig::default(),
         }
     }
 }

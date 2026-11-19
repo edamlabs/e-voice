@@ -1019,6 +1019,7 @@ dependencies = [
  "pulldown-cmark",
  "reqwest",
  "rmcp",
+ "rustix",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1027,6 +1028,7 @@ dependencies = [
  "tracing",
  "tungstenite 0.29.0",
  "url",
+ "uuid",
 ]
 
 [[package]]

@@ -226,3 +226,49 @@ fn test_a_lang_that_is_not_one_of_the_two_is_refused() {
         );
     }
 }
+
+#[test]
+fn test_the_talk_table_defaults_to_claude_with_the_read_and_change_tools() {
+    let talk = Settings::default().daemon.talk;
+    assert_eq!(talk.claude.bin, "claude");
+    assert_eq!(talk.claude.cwd, None);
+    assert_eq!(talk.claude.model, None);
+    assert_eq!(talk.claude.tools, ["Read", "Bash", "Edit", "Write"]);
+}
+
+#[test]
+fn test_the_talk_claude_table_is_read_under_daemon_and_every_key_parses() {
+    let loaded = load(
+        "talk",
+        "[daemon.talk.claude]\nbin = \"/opt/claude\"\ncwd = \"/work\"\nmodel = \"sonnet\"\ntools = [\"Read\", \"Grep\"]\n",
+    )
+    .unwrap();
+    let claude = loaded.daemon.talk.claude;
+    assert_eq!(claude.bin, "/opt/claude");
+    assert_eq!(claude.cwd.as_deref(), Some(std::path::Path::new("/work")));
+    assert_eq!(claude.model.as_deref(), Some("sonnet"));
+    assert_eq!(claude.tools, ["Read", "Grep"]);
+    assert_eq!(loaded.daemon.port, 5700);
+}
+
+#[test]
+fn test_an_unknown_key_in_the_talk_tables_is_refused_and_a_top_level_talk_table_is_not_accepted() {
+    for text in [
+        "[daemon.talk.claude]\nbinn = \"x\"\n",
+        "[daemon.talk]\nother = 1\n",
+        "[talk.claude]\nbin = \"x\"\n",
+    ] {
+        assert!(load("talkbad", text).is_err(), "{text}");
+    }
+}
+
+#[test]
+fn test_ill_typed_talk_values_are_refused() {
+    for text in [
+        "[daemon.talk.claude]\ntools = \"Read\"\n",
+        "[daemon.talk.claude]\nbin = 3\n",
+        "[daemon.talk.claude]\nmodel = true\n",
+    ] {
+        assert!(load("talktype", text).is_err(), "{text}");
+    }
+}
