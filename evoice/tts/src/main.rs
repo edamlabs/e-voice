@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use e_voice_core::audio::{AudioError, AudioFile};
@@ -20,6 +21,7 @@ use e_voice_tts::schema::audio::Audio;
 use e_voice_tts::schema::error::TrainError;
 use e_voice_tts::schema::event::Event;
 use e_voice_tts::workflow::runner::{Request, RunnerError};
+use e_voice_tts::workflow::synth::prompt::Prompt;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use utoipa::OpenApi;
@@ -156,13 +158,14 @@ impl Cli {
                 let (runner, _) = Lifespan::runner(settings).await?;
                 let (synth, rate) = (std::sync::Arc::clone(runner.synth()), runner.caps().rate);
                 let voice = tokio::task::spawn_blocking(move || {
-                    let clips = files
+                    let read = files
                         .iter()
                         .map(|path| {
                             let extension = path.extension().and_then(|extension| extension.to_str());
-                            Ok(Audio::from(AudioFile::decode(std::fs::read(path)?, extension, rate)?))
+                            Ok((std::fs::read(path)?, extension.map(str::to_owned)))
                         })
                         .collect::<Result<Vec<_>, MainError>>()?;
+                    let clips = Prompt::clips(read, rate)?;
                     let seconds: f64 = clips.iter().map(|clip| clip.duration(rate).as_secs_f64()).sum();
                     tracing::info!(clips = clips.len(), seconds, "voice.training");
                     Ok::<_, MainError>(synth.train(&clips, text.as_deref())?)
@@ -262,7 +265,9 @@ impl Cli {
                 let similarity = reference
                     .map(|path| {
                         let extension = path.extension().and_then(|extension| extension.to_str());
-                        let clip = AudioFile::decode(std::fs::read(&path)?, extension, runner.caps().rate)?;
+                        let read = std::fs::read(&path)?;
+                        // The operator's own reference file: no duration limit.
+                        let clip = AudioFile::decode(read, extension, runner.caps().rate, Duration::MAX)?;
                         let dir = ModelStore::open(&settings.tts.ops)?.dir(SPEAKER)?;
                         Ok::<_, MainError>(Similarity::open(&dir, &clip, runner.caps().rate)?)
                     })

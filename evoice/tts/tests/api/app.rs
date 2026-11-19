@@ -21,14 +21,17 @@ pub struct App {
 }
 
 pub async fn serve(delay: u64) -> App {
+    serve_synth(Arc::new(FakeSynth {
+        delay: Duration::from_millis(delay),
+    }))
+    .await
+}
+
+/// The same over any backend.
+pub async fn serve_synth(synth: Arc<dyn e_voice_tts::workflow::synth::base::Synth>) -> App {
     let data = TempDir::new().unwrap();
     let state = AppState {
-        runner: Runner::new(
-            Arc::new(FakeSynth {
-                delay: Duration::from_millis(delay),
-            }),
-            TextConfig { min: 0, max: 200 },
-        ),
+        runner: Runner::new(synth, TextConfig { min: 0, max: 200 }),
         voices: Arc::new(VoiceStore::open(data.path()).unwrap()),
         lang: Lang::Es,
         voice: None,

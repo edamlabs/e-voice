@@ -20,13 +20,17 @@ The response follows Deepgram's shape:
 - `results.channels[0].alternatives[0].transcript` with `detected_language`;
 - one `results.utterances[]` entry per segment, with `start`/`end` in seconds and `emotion`.
 
+`diarize=true` or any `diarize_model` adds `speaker` (an integer from 0, in order of first appearance) to each
+`results.utterances[]` entry, when `[stt.pipeline.diarize]` is on; while it is off the parameter is ignored. `words`
+stays empty: word-level timing is not produced. Live audio carries no speakers.
+
 Errors use `{"err_code", "err_msg", "request_id"}`.
 
 ## Live
 
 `GET /v1/listen?encoding=linear16&sample_rate=48000&language=es` upgrades to a WebSocket.
 
-**Client → server.** Binary audio. `{"type":"CloseStream"}` drains pending segments and closes; other
+**Client → server.** Binary audio, messages capped at 2 MiB (past the cap the socket is closed with 1009; the server does not wait for the client's close reply, and a client still sending a single frame larger than the cap may see the connection reset before it reads the close). `{"type":"CloseStream"}` drains pending segments and closes; other
 control messages (`KeepAlive`, `Finalize`) are accepted.
 
 **Server → client:**

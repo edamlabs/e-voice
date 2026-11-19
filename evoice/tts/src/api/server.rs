@@ -11,7 +11,7 @@ use crate::api::health::health;
 use crate::api::lifespan::{Lifespan, LifespanError};
 use crate::api::native::stream::stream;
 use crate::api::openai::models::models;
-use crate::api::openai::speech::speech;
+use crate::api::openai::speech::{BODY, speech};
 use crate::api::state::AppState;
 use crate::api::voices;
 use crate::core::settings::Settings;
@@ -36,7 +36,7 @@ impl Server {
         Router::new()
             .route("/health", get(health))
             .route("/v1/models", get(models))
-            .route("/v1/audio/speech", post(speech))
+            .route("/v1/audio/speech", post(speech).layer(DefaultBodyLimit::max(BODY)))
             .route("/v1/stream", get(stream))
             .route("/v1/voices", get(voices::list).post(voices::create).layer(upload))
             .route("/v1/voices/{voice_id}", delete(voices::remove))

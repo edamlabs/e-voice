@@ -16,4 +16,7 @@ Response:
 ```
 
 - `words` holds one entry per recognized segment; word-level timing is not produced.
+- `diarize=true` adds `speaker_id` (`speaker_0`, `speaker_1`, … in order of first appearance) to each `words`
+  entry, when `[stt.pipeline.diarize]` is on; while it is off the field is ignored. `num_speakers` and
+  `diarization_threshold` are accepted and ignored.
 - Errors use `{"detail": {"status", "message"}}`.

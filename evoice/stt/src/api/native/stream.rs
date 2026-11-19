@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use utoipa::IntoParams;
 
-use crate::api::live::{Inbound, LiveOutcome, LiveProtocol, LiveStream};
+use crate::api::live::{AUDIO_MESSAGE, Inbound, LiveOutcome, LiveProtocol, LiveStream};
 use crate::api::state::AppState;
 use crate::config::api::EmotionMode;
 use crate::schema::audio::RATE;
@@ -146,5 +146,7 @@ pub async fn stream(ws: WebSocketUpgrade, Query(query): Query<StreamQuery>, Stat
     let lang = query.lang.unwrap_or(state.lang);
     let (rate, encoding) = (query.rate.unwrap_or(RATE), query.encoding.unwrap_or_default());
     let protocol = Native::new(query.view.unwrap_or_default(), emotion);
-    ws.on_upgrade(move |socket| LiveStream::new(lang, rate, encoding).serve(state, socket, protocol))
+    ws.max_message_size(AUDIO_MESSAGE)
+        .max_frame_size(AUDIO_MESSAGE)
+        .on_upgrade(move |socket| LiveStream::new(lang, rate, encoding, AUDIO_MESSAGE).serve(state, socket, protocol))
 }

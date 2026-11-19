@@ -1,4 +1,6 @@
-use e_voice_core::audio::AudioFile;
+use std::time::Duration;
+
+use e_voice_core::audio::{AudioError, AudioFile};
 use e_voice_core::schema::lang::Lang;
 use tokio::sync::mpsc;
 
@@ -6,6 +8,7 @@ use crate::api::state::AppState;
 use crate::config::asr::AsrEngine;
 use crate::schema::audio::RATE;
 use crate::schema::event::Event;
+use crate::schema::speaker::Diarization;
 use crate::schema::transcript::Transcript;
 use crate::workflow::runner::Runner;
 
@@ -17,6 +20,8 @@ pub enum BatchError {
     Model(String),
     #[error("{0}")]
     Failed(String),
+    #[error("{0}")]
+    TooLong(String),
 }
 
 /// An uploaded file through the lossless file intake: the path every REST protocol shares.
@@ -24,6 +29,16 @@ pub enum BatchError {
 pub struct Batch;
 
 impl Batch {
+    /// What a request's ask for speakers comes to on this server: `Run` only while the diarization
+    /// node is loaded. Whether an ask the server cannot honour is refused or ignored is each door's.
+    #[must_use]
+    pub fn diarization(state: &AppState, asked: Diarization) -> Diarization {
+        match (asked, state.runner.diarizes()) {
+            (Diarization::Run, true) => Diarization::Run,
+            (Diarization::Run, false) | (Diarization::Skip, _) => Diarization::Skip,
+        }
+    }
+
     /// The runner for a request's model field: a loaded engine by name or id, else the default.
     ///
     /// # Errors
@@ -41,15 +56,21 @@ impl Batch {
         })
     }
 
-    /// Container sniffing, decoding and resampling, off the async threads.
+    /// Container sniffing, decoding and resampling, off the async threads; decoding stops as soon as the
+    /// audio passes `limit`.
     ///
     /// # Errors
-    /// The bytes are not decodable audio.
-    pub async fn decode(bytes: Vec<u8>, extension: Option<String>) -> Result<Vec<f32>, BatchError> {
-        tokio::task::spawn_blocking(move || AudioFile::decode(bytes, extension.as_deref(), RATE))
+    /// The bytes are not decodable audio, or they decode to more than `limit`.
+    pub async fn decode(bytes: Vec<u8>, extension: Option<String>, limit: Duration) -> Result<Vec<f32>, BatchError> {
+        tokio::task::spawn_blocking(move || AudioFile::decode(bytes, extension.as_deref(), RATE, limit))
             .await
             .map_err(|error| BatchError::Failed(error.to_string()))?
-            .map_err(|error| BatchError::Decode(error.to_string()))
+            .map_err(|error| match error {
+                AudioError::TooLong(_) => BatchError::TooLong(error.to_string()),
+                AudioError::Rate(_) | AudioError::Resample(_) | AudioError::Container(_) => {
+                    BatchError::Decode(error.to_string())
+                }
+            })
     }
 
     /// The whole transcript; a failed segment fails the request rather than silently dropping text.
@@ -62,16 +83,17 @@ impl Batch {
         bytes: Vec<u8>,
         extension: Option<String>,
         lang: Lang,
+        diarization: Diarization,
     ) -> Result<Transcript, BatchError> {
         let runner = Self::runner(state, model)?;
-        let samples = Self::decode(bytes, extension).await?;
+        let samples = Self::decode(bytes, extension, state.duration).await?;
         tracing::info!(
             ?lang,
             seconds = Transcript::seconds(samples.len() as u64),
             "transcription.start"
         );
         let transcript = runner
-            .transcribe(lang, samples)
+            .transcribe(lang, samples, diarization)
             .await
             .map_err(|error| BatchError::Failed(error.to_string()))?;
         let failed: Vec<String> = transcript
@@ -99,10 +121,11 @@ impl Batch {
         bytes: Vec<u8>,
         extension: Option<String>,
         lang: Lang,
+        diarization: Diarization,
     ) -> Result<(mpsc::Receiver<Event>, f64), BatchError> {
         let runner = Self::runner(state, model)?;
-        let samples = Self::decode(bytes, extension).await?;
+        let samples = Self::decode(bytes, extension, state.duration).await?;
         let seconds = Transcript::seconds(samples.len() as u64);
-        Ok((runner.file(lang, samples), seconds))
+        Ok((runner.file(lang, samples, diarization), seconds))
     }
 }

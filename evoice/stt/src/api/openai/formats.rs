@@ -16,6 +16,8 @@ use utoipa::ToSchema;
 use crate::api::batch::BatchError;
 use crate::config::api::EmotionMode;
 use crate::schema::emotion::Emotion;
+use crate::schema::event::FinalEvent;
+use crate::schema::speaker::{Diarization, SpeakerId};
 use crate::schema::transcript::Transcript;
 
 /// Error body in the shape OpenAI clients parse: `{"error": {message, type, param, code}}`.
@@ -66,6 +68,10 @@ impl From<BatchError> for OpenaiError {
             BatchError::Decode(message) => Self::invalid(message, Some("file")),
             BatchError::Model(message) => Self::invalid(message, Some("model")),
             BatchError::Failed(message) => Self::server(message),
+            BatchError::TooLong(message) => Self {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                ..Self::invalid(message, Some("file"))
+            },
         }
     }
 }
@@ -86,6 +92,7 @@ pub enum OpenaiFormat {
     Srt,
     Vtt,
     VerboseJson,
+    DiarizedJson,
 }
 
 /// `json` response: OpenAI's `text` and `usage`, plus `emotion` unless `emotion=off`.
@@ -111,6 +118,33 @@ pub struct VerboseSegment {
     pub avg_logprob: f64,
     pub compression_ratio: f64,
     pub no_speech_prob: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emotion: Option<Emotion>,
+}
+
+/// One `diarized_json` segment, streamed alike as a `transcript.text.segment` event. `speaker` is
+/// absent only where no voice overlaps the segment.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DiarizedSegment {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub id: String,
+    pub start: f64,
+    pub end: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
+    pub text: String,
+}
+
+/// `diarized_json` response: OpenAI's shape, plus `emotion` unless `emotion=off`.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TranscriptionDiarized {
+    pub task: &'static str,
+    pub duration: f64,
+    pub text: String,
+    pub segments: Vec<DiarizedSegment>,
+    #[schema(value_type = Object)]
+    pub usage: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emotion: Option<Emotion>,
 }
@@ -145,18 +179,25 @@ impl OpenaiFormat {
         let mut cues = String::new();
         let spoken = transcript.segments.iter().filter(|segment| !segment.text.is_empty());
         for (index, segment) in (1u64..).zip(spoken) {
-            let single = Transcript {
-                segments: vec![segment.clone()],
-                ..transcript.clone()
-            };
             let (start, end) = (
                 Self::render_clock(segment.span.start, separator),
                 Self::render_clock(segment.span.end, separator),
             );
             let number = if numbered { format!("{index}\n") } else { String::new() };
-            writeln!(cues, "{number}{start} --> {end}\n{}\n", single.text(tags)).ok();
+            writeln!(cues, "{number}{start} --> {end}\n{}\n", Transcript::line(segment, tags)).ok();
         }
         cues
+    }
+
+    /// OpenAI's letters: `A` … `Z`, then `AA`, `AB`, … — past `Z` is ours, upstream documents none.
+    fn render_speaker(speaker: SpeakerId) -> String {
+        let next = |rest: &u32| Some(rest.saturating_sub(1) / 26).filter(|left| *left > 0);
+        let offset = |rest: u32| u8::try_from(rest.saturating_sub(1) % 26).unwrap_or(0);
+        let letter = |rest: u32| char::from(b'A'.saturating_add(offset(rest)));
+        let letters: Vec<char> = std::iter::successors(Some(speaker.0.saturating_add(1)), next)
+            .map(letter)
+            .collect();
+        letters.into_iter().rev().collect()
     }
 
     // ##########################################################
@@ -172,10 +213,33 @@ impl OpenaiFormat {
             "srt" => Ok(Self::Srt),
             "vtt" => Ok(Self::Vtt),
             "verbose_json" => Ok(Self::VerboseJson),
+            "diarized_json" => Ok(Self::DiarizedJson),
             other => Err(OpenaiError::invalid(
-                format!("unsupported response_format {other:?}; use json, text, srt, vtt or verbose_json"),
+                format!("unsupported response_format {other:?}; use json, text, srt, vtt, verbose_json, diarized_json"),
                 Some("response_format"),
             )),
+        }
+    }
+
+    /// Speakers are asked of the pipeline by `diarized_json` alone.
+    #[must_use]
+    pub const fn diarization(self) -> Diarization {
+        match self {
+            Self::DiarizedJson => Diarization::Run,
+            Self::Json | Self::Text | Self::Srt | Self::Vtt | Self::VerboseJson => Diarization::Skip,
+        }
+    }
+
+    /// One spoken final in `diarized_json` shape, its id the pipeline's segment id.
+    #[must_use]
+    pub fn diarized(segment: &FinalEvent, speaker: Option<SpeakerId>, tags: bool) -> DiarizedSegment {
+        DiarizedSegment {
+            kind: "transcript.text.segment",
+            id: segment.segment.0.to_string(),
+            start: Transcript::seconds(segment.span.start),
+            end: Transcript::seconds(segment.span.end),
+            speaker: speaker.map(Self::render_speaker),
+            text: Transcript::line(segment, tags),
         }
     }
 
@@ -212,11 +276,7 @@ impl OpenaiFormat {
                         seek: 0,
                         start: Transcript::seconds(segment.span.start),
                         end: Transcript::seconds(segment.span.end),
-                        text: Transcript {
-                            segments: vec![segment.clone()],
-                            ..transcript.clone()
-                        }
-                        .text(emotion.tags()),
+                        text: Transcript::line(segment, emotion.tags()),
                         tokens: Vec::new(),
                         temperature: 0.0,
                         avg_logprob: 0.0,
@@ -235,6 +295,20 @@ impl OpenaiFormat {
                 })
                 .into_response()
             }
+            Self::DiarizedJson => Json(TranscriptionDiarized {
+                task: "transcribe",
+                duration: transcript.duration(),
+                text,
+                segments: transcript
+                    .segments
+                    .iter()
+                    .filter(|segment| !segment.text.is_empty())
+                    .map(|segment| Self::diarized(segment, segment.speaker, emotion.tags()))
+                    .collect(),
+                usage: json!({"type": "duration", "seconds": transcript.duration().ceil()}),
+                emotion: summary,
+            })
+            .into_response(),
         }
     }
 
@@ -245,6 +319,10 @@ impl OpenaiFormat {
     pub fn done(text: &str, seconds: f64) -> SseEvent {
         let usage = json!({"type": "duration", "seconds": seconds.ceil()});
         SseEvent::default().data(json!({"type": "transcript.text.done", "text": text, "usage": usage}).to_string())
+    }
+
+    pub fn segment(segment: &DiarizedSegment) -> SseEvent {
+        SseEvent::default().data(json!(segment).to_string())
     }
 
     pub fn failure(message: &str) -> SseEvent {
@@ -265,9 +343,11 @@ pub struct TranscriptionForm {
     pub model: String,
     /// `es` or `en` (regions such as `es-ES` are accepted).
     pub language: Option<String>,
-    /// `json` (default), `text`, `srt`, `vtt` or `verbose_json`.
+    /// `json` (default), `text`, `srt`, `vtt`, `verbose_json` or `diarized_json` (speakers; refused while
+    /// diarization is off). `chunking_strategy` and `known_speaker_*` are accepted and ignored.
     pub response_format: Option<String>,
-    /// `true` streams `transcript.text.delta` server-sent events.
+    /// `true` streams `transcript.text.delta` server-sent events; with `diarized_json`, one
+    /// `transcript.text.segment` per spoken segment follows once speakers are known.
     pub stream: Option<bool>,
     /// `field`, `tag` or `off`; the server default when omitted.
     pub emotion: Option<String>,

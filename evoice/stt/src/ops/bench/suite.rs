@@ -14,6 +14,7 @@ use crate::ops::bench::record::{Record, RecordSegment, RecordSummary};
 use crate::schema::audio::{Audio, RATE};
 use crate::schema::event::{Event, FinalEvent};
 use crate::schema::segment::SegmentId;
+use crate::schema::speaker::Diarization;
 use crate::schema::transcript::Transcript;
 use crate::workflow::runner::{Runner, RunnerError, RunnerIntake};
 use e_voice_core::probe::Probe;
@@ -107,7 +108,7 @@ impl Suite {
                     let partial = partials.get(&done.segment).copied();
                     segments.push((done, Some(at), partial));
                 }
-                Event::Wake(_) | Event::Speech(_) | Event::Closed => {}
+                Event::Wake(_) | Event::Speech(_) | Event::Speakers(_) | Event::Closed => {}
             }
         }
         feed.abort();
@@ -123,7 +124,8 @@ impl Suite {
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .map(str::to_owned);
-            AudioFile::decode(bytes, extension.as_deref(), RATE).map_err(|error| error.to_string())
+            // The operator's own manifest files: no duration limit.
+            AudioFile::decode(bytes, extension.as_deref(), RATE, Duration::MAX).map_err(|error| error.to_string())
         })
         .await
         .map_err(|error| error.to_string())
@@ -136,7 +138,7 @@ impl Suite {
             (Err(error), _) => Err(error),
             (Ok(samples), SuiteMode::File) => self
                 .runner
-                .transcribe(item.lang, samples)
+                .transcribe(item.lang, samples, Diarization::Skip)
                 .await
                 .map(|transcript| transcript.segments.into_iter().map(|done| (done, None, None)).collect())
                 .map_err(|error| error.to_string()),

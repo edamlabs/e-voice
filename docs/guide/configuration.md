@@ -19,7 +19,7 @@ The configuration is a contract:
 |---|---|
 | `[server]` | bind address and logging, for every service |
 | `[stt]` | default language |
-| `[stt.api]` | STT port (5500), upload cap, emotion exposure |
+| `[stt.api]` | STT port (5500), upload cap (bytes received), duration cap (what they decode to, `4h`), emotion exposure |
 | `[stt.pipeline]` | backpressure, stall timeout, tick, pre-roll, concurrent jobs, gate, gain |
 | `[stt.pipeline.denoise]` | speech enhancement before gain and VAD |
 | `[stt.pipeline.ww]` | wake word gate |

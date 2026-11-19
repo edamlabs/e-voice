@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::body::Bytes;
+use axum::extract::rejection::BytesRejection;
 use axum::extract::ws::{Message, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -11,11 +12,12 @@ use serde_json::{Value, json};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::api::batch::{Batch, BatchError};
-use crate::api::live::{Inbound, LiveOutcome, LiveProtocol, LiveStream};
+use crate::api::live::{AUDIO_MESSAGE, Inbound, LiveOutcome, LiveProtocol, LiveStream};
 use crate::api::state::AppState;
 use crate::config::api::EmotionMode;
 use crate::schema::emotion::Emotion;
 use crate::schema::event::{Event, FinalEvent, SpeechState};
+use crate::schema::speaker::Diarization;
 use crate::schema::transcript::Transcript;
 
 /// Error body in the shape Deepgram clients parse.
@@ -26,12 +28,9 @@ pub struct DeepgramError {
 }
 
 impl IntoResponse for DeepgramError {
+    /// `err_code` is the status's reason phrase (`Bad Request`, `Payload Too Large`, …).
     fn into_response(self) -> Response {
-        let code = if self.status.is_client_error() {
-            "Bad Request"
-        } else {
-            "Internal Server Error"
-        };
+        let code = self.status.canonical_reason().unwrap_or_default();
         let body = json!({"err_code": code, "err_msg": self.message, "request_id": uuid::Uuid::new_v4().to_string()});
         (self.status, Json(body)).into_response()
     }
@@ -48,12 +47,16 @@ impl From<BatchError> for DeepgramError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 message,
             },
+            BatchError::TooLong(message) => Self {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                message,
+            },
         }
     }
 }
 
-/// `/v1/listen` query: Deepgram's names; options that do not apply (`punctuate`, `smart_format`,
-/// `diarize`, …) are accepted and ignored.
+/// `/v1/listen` query: Deepgram's names; options that do not apply (`punctuate`, `smart_format`, …) are
+/// accepted and ignored.
 #[derive(Debug, Default, Deserialize, IntoParams)]
 #[serde(default)]
 pub struct ListenQuery {
@@ -70,6 +73,10 @@ pub struct ListenQuery {
     pub interim_results: Option<bool>,
     /// `field`, `tag` or `off` for the `emotion` extension.
     pub emotion: Option<String>,
+    /// Prerecorded only: `true` labels each utterance with its speaker; ignored while diarization is off.
+    pub diarize: Option<bool>,
+    /// Prerecorded only: any value asks for speakers like `diarize=true`; the model is the server's.
+    pub diarize_model: Option<String>,
 }
 
 impl ListenQuery {
@@ -93,6 +100,13 @@ impl ListenQuery {
             .map_err(invalid)?
             .unwrap_or(state.emotion);
         Ok((lang, emotion))
+    }
+
+    fn diarization(&self) -> Diarization {
+        match (self.diarize, &self.diarize_model) {
+            (Some(true), _) | (_, Some(_)) => Diarization::Run,
+            (Some(false) | None, None) => Diarization::Skip,
+        }
     }
 }
 
@@ -169,21 +183,23 @@ impl Deepgram {
             .iter()
             .filter(|segment| !segment.text.is_empty())
             .map(|segment| {
-                let single = Transcript {
-                    segments: vec![segment.clone()],
-                    ..transcript.clone()
-                };
                 let mut utterance = json!({
                     "start": Transcript::seconds(segment.span.start),
                     "end": Transcript::seconds(segment.span.end),
                     "confidence": 1.0,
                     "channel": 0,
-                    "transcript": single.text(emotion.tags()),
+                    "transcript": Transcript::line(segment, emotion.tags()),
                     "words": [],
                     "id": uuid::Uuid::new_v4().to_string(),
                 });
-                if let Some(object) = utterance.as_object_mut().filter(|_| emotion.field()) {
-                    object.insert("emotion".to_owned(), json!(segment.emotion));
+                if let Some(object) = utterance.as_object_mut() {
+                    object.extend(
+                        emotion
+                            .field()
+                            .then(|| ("emotion".to_owned(), json!(segment.emotion)))
+                            .into_iter()
+                            .chain(segment.speaker.map(|speaker| ("speaker".to_owned(), json!(speaker.0)))),
+                    );
                 }
                 utterance
             })
@@ -257,7 +273,7 @@ impl LiveProtocol for Deepgram {
                     Message::Text(close.to_string().into()),
                 ]
             }
-            Event::Partial(_) | Event::Wake(_) | Event::Closed => Vec::new(),
+            Event::Partial(_) | Event::Wake(_) | Event::Speakers(_) | Event::Closed => Vec::new(),
         }
     }
 
@@ -277,14 +293,23 @@ impl LiveProtocol for Deepgram {
     tag = "deepgram",
     params(ListenQuery),
     request_body(content = Vec<u8>, content_type = "audio/*", description = "wav, mp3, m4a, flac, ogg, opus or webm"),
-    responses((status = 200, body = ListenResponse), (status = 400, description = "Invalid request (Deepgram error shape)"))
+    responses(
+        (status = 200, body = ListenResponse),
+        (status = 400, description = "Invalid request (Deepgram error shape)"),
+        (status = 413, description = "Over the upload or duration limit (Deepgram error shape)"),
+    )
 )]
 pub async fn prerecorded(
     State(state): State<AppState>,
     Query(query): Query<ListenQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Json<ListenResponse>, DeepgramError> {
+    // A body past `upload` answers in Deepgram's envelope, not axum's plain text.
+    let body = body.map_err(|rejection| DeepgramError {
+        status: rejection.status(),
+        message: rejection.body_text(),
+    })?;
     let (lang, emotion) = query.parse(&state)?;
     let extension = headers
         .get(axum::http::header::CONTENT_TYPE)
@@ -298,7 +323,15 @@ pub async fn prerecorded(
                 .unwrap_or_default()
                 .to_owned()
         });
-    let transcript = Batch::transcribe(&state, query.model.as_deref(), body.to_vec(), extension, lang).await?;
+    let transcript = Batch::transcribe(
+        &state,
+        query.model.as_deref(),
+        body.to_vec(),
+        extension,
+        lang,
+        Batch::diarization(&state, query.diarization()),
+    )
+    .await?;
     let model = query
         .model
         .clone()
@@ -340,8 +373,10 @@ pub async fn streaming(
     let rate = query.sample_rate.unwrap_or(16_000);
     let interim = query.interim_results.unwrap_or(true);
     Ok(ws
+        .max_message_size(AUDIO_MESSAGE)
+        .max_frame_size(AUDIO_MESSAGE)
         .on_upgrade(move |socket| {
-            LiveStream::new(lang, rate, encoding).serve(state, socket, Deepgram::new(emotion, interim))
+            LiveStream::new(lang, rate, encoding, AUDIO_MESSAGE).serve(state, socket, Deepgram::new(emotion, interim))
         })
         .into_response())
 }

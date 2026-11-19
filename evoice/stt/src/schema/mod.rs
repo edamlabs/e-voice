@@ -3,4 +3,5 @@ pub mod emotion;
 pub mod event;
 pub mod mode;
 pub mod segment;
+pub mod speaker;
 pub mod transcript;

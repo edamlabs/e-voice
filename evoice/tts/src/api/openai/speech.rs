@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
+use axum::extract::rejection::JsonRejection;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
@@ -17,7 +18,7 @@ use crate::api::error::ApiError;
 use crate::api::state::AppState;
 use crate::core::encode::AudioFormat;
 use crate::schema::event::Event;
-use crate::workflow::runner::Request;
+use crate::workflow::runner::{INPUT, Request};
 
 /// How the audio is delivered: raw bytes as they are generated, or server-sent events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, ToSchema)]
@@ -62,10 +63,17 @@ impl SpeechEvent {
     }
 }
 
-/// Speaks `input`, streaming audio while later sentences are still being generated.
+/// The largest body the speech door reads: 64 KiB, room for [`INPUT`] characters even with every one
+/// JSON-escaped, so an oversized request is refused before it is buffered.
+pub const BODY: usize = 65_536;
+
+/// Speaks `input`, streaming audio while later sentences are still being generated. The answer is
+/// back-pressured by the client's reading, so memory is bounded by the runner's channels, not by the
+/// text; [`INPUT`] bounds the work one request can ask for.
 ///
 /// # Errors
-/// An unsupported format or language, empty input, an unreadable default voice, or no free worker.
+/// A body over [`BODY`] or not valid JSON, an unsupported format or language, empty input or input over
+/// [`INPUT`] characters, an unreadable default voice, or no free worker.
 #[utoipa::path(
     post,
     path = "/v1/audio/speech",
@@ -74,10 +82,16 @@ impl SpeechEvent {
     responses(
         (status = 200, description = "audio bytes (wav, pcm or f32) or SSE `speech.audio.delta` events"),
         (status = 400, body = crate::api::error::ErrorBody),
+        (status = 413, description = "a body over 64 KiB", body = crate::api::error::ErrorBody),
+        (status = 422, description = "JSON that is not a speech request", body = crate::api::error::ErrorBody),
         (status = 503, description = "every worker is busy", body = crate::api::error::ErrorBody)
     )
 )]
-pub async fn speech(State(state): State<AppState>, Json(request): Json<SpeechRequest>) -> Result<Response, ApiError> {
+pub async fn speech(
+    State(state): State<AppState>,
+    body: Result<Json<SpeechRequest>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let Json(request) = body.map_err(|rejection| ApiError::Rejected(rejection.status(), rejection.body_text()))?;
     let format = match request.response_format.as_deref().unwrap_or("wav") {
         "wav" => AudioFormat::Wav,
         "pcm" => AudioFormat::Pcm,
@@ -98,6 +112,10 @@ pub async fn speech(State(state): State<AppState>, Json(request): Json<SpeechReq
     (!request.input.trim().is_empty())
         .then_some(())
         .ok_or_else(|| ApiError::Invalid("input is empty".to_owned()))?;
+    let length = request.input.chars().count();
+    (length <= INPUT)
+        .then_some(())
+        .ok_or_else(|| ApiError::Invalid(format!("input is too long: {length} characters, at most {INPUT}")))?;
     let voice = state.voice(request.voice).await?;
     let session = state.runner.open(lang, voice).await?;
     let (requests, inbox) = mpsc::channel(2);

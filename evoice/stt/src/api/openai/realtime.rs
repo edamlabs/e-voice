@@ -21,6 +21,9 @@ use crate::schema::segment::SegmentId;
 use crate::schema::transcript::Transcript;
 
 const RATE: u32 = 24_000;
+/// The largest message or frame the realtime socket takes: 16 MiB, so a client that sends audio events
+/// up to the 15 MiB OpenAI reportedly allows is never cut.
+const MESSAGE: usize = 16_777_216;
 
 /// `GET /v1/realtime?intent=transcription&language=es&emotion=field`
 #[derive(Debug, Deserialize, IntoParams)]
@@ -239,7 +242,7 @@ impl LiveProtocol for Realtime {
                     }
                 }
             }
-            Event::Wake(_) | Event::Closed => Vec::new(),
+            Event::Wake(_) | Event::Speakers(_) | Event::Closed => Vec::new(),
         }
     }
 
@@ -288,8 +291,11 @@ pub async fn realtime(
     };
     tracing::info!(?lang, intent = ?query.intent, model = ?query.model, "openai.realtime");
     Ok(ws
+        .max_message_size(MESSAGE)
+        .max_frame_size(MESSAGE)
         .on_upgrade(move |socket| {
-            LiveStream::new(lang, RATE, AudioEncoding::S16le).serve(state, socket, Realtime::new(lang, emotion))
+            let live = LiveStream::new(lang, RATE, AudioEncoding::S16le, MESSAGE);
+            live.serve(state, socket, Realtime::new(lang, emotion))
         })
         .into_response())
 }

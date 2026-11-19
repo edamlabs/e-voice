@@ -1,10 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use e_voice_core::schema::lang::Lang;
 
 use crate::schema::audio::RATE;
 use crate::schema::emotion::{Emotion, EmotionLabel};
-use crate::schema::event::FinalEvent;
+use crate::schema::event::{FinalEvent, SpeakersEvent};
+use crate::schema::segment::SegmentId;
+use crate::schema::speaker::SpeakerId;
 
 /// A whole file's result: every final in order, plus the totals clients ask for.
 #[derive(Debug, Clone, PartialEq)]
@@ -31,12 +33,19 @@ impl Transcript {
         self.segments
             .iter()
             .filter(|segment| !segment.text.is_empty())
-            .map(|segment| match (tags, segment.emotion.label) {
-                (false, _) | (true, EmotionLabel::Unknown) => segment.text.clone(),
-                (true, label) => format!("[{}] {}", Self::tag(label), segment.text),
-            })
+            .map(|segment| Self::line(segment, tags))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    /// One segment as [`Transcript::text`] renders it, without building a transcript around it.
+    #[must_use]
+    pub fn line(segment: &FinalEvent, tags: bool) -> String {
+        match (segment.text.is_empty(), tags, segment.emotion.label) {
+            (true, _, _) => String::new(),
+            (false, false, _) | (false, true, EmotionLabel::Unknown) => segment.text.clone(),
+            (false, true, label) => format!("[{}] {}", Self::tag(label), segment.text),
+        }
     }
 
     #[must_use]
@@ -70,6 +79,18 @@ impl Transcript {
             .map_or(EmotionLabel::Unknown, |(label, _)| *label);
         let model = weighted.first().and_then(|(_, emotion)| emotion.model.clone());
         Emotion { label, scores, model }
+    }
+
+    /// Speakers of a diarized run onto their finals; segments it does not name keep none.
+    pub fn label(&mut self, speakers: &SpeakersEvent) {
+        let named: HashMap<SegmentId, SpeakerId> = speakers
+            .segments
+            .iter()
+            .map(|named| (named.segment, named.speaker))
+            .collect();
+        self.segments
+            .iter_mut()
+            .for_each(|done| done.speaker = named.get(&done.segment).copied());
     }
 }
 
@@ -105,6 +126,7 @@ mod tests {
                 model: Some("m".into()),
             },
             error: None,
+            speaker: None,
         }
     }
 

@@ -12,6 +12,7 @@ use crate::api::batch::{Batch, BatchError};
 use crate::api::state::AppState;
 use crate::config::api::EmotionMode;
 use crate::schema::emotion::Emotion;
+use crate::schema::speaker::Diarization;
 use crate::schema::transcript::Transcript;
 
 /// Error body in the shape ElevenLabs clients parse: `{"detail": {"status", "message"}}`.
@@ -47,6 +48,10 @@ impl From<BatchError> for ScribeError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 message,
             },
+            BatchError::TooLong(message) => Self {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                message,
+            },
         }
     }
 }
@@ -60,8 +65,8 @@ impl From<MultipartError> for ScribeError {
     }
 }
 
-/// Multipart form of `/v1/speech-to-text`; Scribe options without a counterpart (`diarize`,
-/// `tag_audio_events`, `timestamps_granularity`, …) are accepted and ignored.
+/// Multipart form of `/v1/speech-to-text`; Scribe options without a counterpart (`num_speakers`,
+/// `diarization_threshold`, `tag_audio_events`, `timestamps_granularity`, …) are accepted and ignored.
 #[derive(Debug, ToSchema)]
 pub struct ScribeForm {
     #[schema(value_type = String, format = Binary)]
@@ -72,6 +77,8 @@ pub struct ScribeForm {
     pub language_code: Option<String>,
     /// `field`, `tag` or `off` for the `emotion` extension.
     pub emotion: Option<String>,
+    /// `true` sets every word's `speaker_id` (`speaker_0`, …); ignored while diarization is off.
+    pub diarize: Option<bool>,
 }
 
 /// Scribe's response; `words` holds one entry per recognized segment.
@@ -95,7 +102,11 @@ pub struct ScribeResponse {
     path = "/v1/speech-to-text",
     tag = "elevenlabs",
     request_body(content = ScribeForm, content_type = "multipart/form-data"),
-    responses((status = 200, body = ScribeResponse), (status = 400, description = "Invalid request (ElevenLabs error shape)"))
+    responses(
+        (status = 200, body = ScribeResponse),
+        (status = 400, description = "Invalid request (ElevenLabs error shape)"),
+        (status = 413, description = "Over the upload or duration limit (ElevenLabs error shape)"),
+    )
 )]
 pub async fn scribe(
     State(state): State<AppState>,
@@ -106,7 +117,7 @@ pub async fn scribe(
         message,
     };
     let (mut file, mut extension, mut lang, mut emotion) = (None, None, state.lang, state.emotion);
-    let mut model: Option<String> = None;
+    let (mut model, mut diarization): (Option<String>, _) = (None, Diarization::Skip);
     while let Some(field) = multipart.next_field().await? {
         match field.name().unwrap_or_default() {
             "file" => {
@@ -127,24 +138,37 @@ pub async fn scribe(
             }
             "emotion" => emotion = field.text().await?.parse::<EmotionMode>().map_err(invalid)?,
             "model_id" => model = Some(field.text().await?),
+            "diarize" => {
+                diarization = match field.text().await?.as_str() {
+                    "true" | "1" => Diarization::Run,
+                    _ => Diarization::Skip,
+                };
+            }
             _ => {}
         }
     }
     let file = file
         .filter(|file| !file.is_empty())
         .ok_or_else(|| invalid("missing required field: file".to_owned()))?;
-    let transcript = Batch::transcribe(&state, model.as_deref(), file.to_vec(), extension, lang).await?;
+    let diarization = Batch::diarization(&state, diarization);
+    let transcript = Batch::transcribe(&state, model.as_deref(), file.to_vec(), extension, lang, diarization).await?;
     let words = transcript
         .segments
         .iter()
         .filter(|segment| !segment.text.is_empty())
         .map(|segment| {
-            json!({
-                "text": Transcript { segments: vec![segment.clone()], ..transcript.clone() }.text(emotion.tags()),
+            let mut word = json!({
+                "text": Transcript::line(segment, emotion.tags()),
                 "start": Transcript::seconds(segment.span.start),
                 "end": Transcript::seconds(segment.span.end),
                 "type": "word",
-            })
+            });
+            // Asked speakers: the key always present, null where no voice overlaps the segment.
+            if let (Some(object), Diarization::Run) = (word.as_object_mut(), diarization) {
+                let speaker = segment.speaker.map(|speaker| format!("speaker_{}", speaker.0));
+                object.insert("speaker_id".to_owned(), json!(speaker));
+            }
+            word
         })
         .collect();
     Ok(Json(ScribeResponse {
