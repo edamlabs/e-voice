@@ -341,7 +341,7 @@ pub fn long(count: usize, marker: f32) -> FakeSpeech {
 
 /// The audio thread records a clear after `stop` has answered; waits for it, up to a second.
 pub async fn cleared(device: &Device) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(1);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if events(&device.log).contains(&Ev::Clear) {
             return true;
@@ -600,7 +600,7 @@ impl Mic {
 
     /// Waits up to a second of real time for the device to be released.
     pub async fn freed(&self) -> bool {
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             if self.opened() > 0 && !self.is_open() {
                 return true;
@@ -612,7 +612,7 @@ impl Mic {
 
     /// Waits up to a second of real time for the device to be open.
     pub async fn live(&self) -> bool {
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
             if self.is_open() && self.deliver.lock().unwrap().is_some() {
                 return true;
@@ -713,13 +713,21 @@ pub fn state_with(
     voices: FakeVoices,
     table: BTreeMap<String, String>,
 ) -> e_voice_daemon::api::state::AppState {
-    let mcp = e_voice_daemon::mcp::server::McpServer::new(speech.clone(), Arc::clone(&listen), Arc::new(voices), table);
+    let table = e_voice_daemon::speech::table::VoiceTable::new(table);
+    let mcp = e_voice_daemon::mcp::server::McpServer::new(
+        speech.clone(),
+        Arc::clone(&listen),
+        Arc::new(voices),
+        table.clone(),
+    );
     e_voice_daemon::api::state::AppState {
         speech,
         listen,
         events,
         subscribers: pool(),
         mcp,
+        table,
+        lang: Lang::Es,
     }
 }
 

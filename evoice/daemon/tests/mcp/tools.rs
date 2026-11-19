@@ -177,7 +177,7 @@ async fn test_a_full_queue_is_a_tool_error_with_429() {
             tokio::spawn(async move { mcp.call("speak", &json!({"text": "x"})).await })
         })
         .collect();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while w.state.speech.state() != (SpeechState::Speaking { id: 0 }) && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }

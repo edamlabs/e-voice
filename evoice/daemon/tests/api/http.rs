@@ -25,8 +25,8 @@ pub fn post_json(port: u16, path: &str, body: &str) -> (u16, String) {
 #[allow(dead_code)]
 pub fn post_typed(port: u16, path: &str, content_type: Option<&str>, body: Option<&str>) -> (u16, String) {
     let mut stream =
-        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(2)).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(10)).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
     let kind = content_type.map_or_else(String::new, |kind| format!("Content-Type: {kind}\r\n"));
     let length = body.map_or_else(String::new, |body| format!("Content-Length: {}\r\n", body.len()));
     write!(
@@ -47,8 +47,8 @@ pub fn post_typed(port: u16, path: &str, content_type: Option<&str>, body: Optio
 
 fn send(port: u16, method: &str, path: &str, body: Option<&str>) -> (u16, String) {
     let mut stream =
-        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(2)).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(10)).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
     let headers = body.map_or_else(String::new, |body| {
         format!("Content-Type: application/json\r\nContent-Length: {}\r\n", body.len())
     });

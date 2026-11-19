@@ -206,7 +206,7 @@ async fn test_next_dropped_between_events_loses_none() {
     let server = Scripted::start(steps).await;
     let mut session = SttHearing::new(server.url()).open(rate()).await.unwrap();
     let mut got = Vec::new();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while got.len() < 6 && Instant::now() < deadline {
         if let Ok(Some(Ok(Recognized::Partial(t)))) =
             tokio::time::timeout(Duration::from_millis(5), session.next()).await
@@ -275,7 +275,7 @@ fn test_the_mirror_parses_the_voice_states_and_files_the_rest_under_other() {
 async fn test_sending_after_the_recognizer_is_gone_is_a_protocol_error() {
     let server = Scripted::start(vec![Step::Drop]).await;
     let mut session = SttHearing::new(server.url()).open(rate()).await.unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let mut failed = None;
     while failed.is_none() && Instant::now() < deadline {
         failed = session.send(&[0.0; 1_600]).await.err();

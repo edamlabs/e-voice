@@ -202,3 +202,27 @@ fn test_a_voices_table_that_is_not_names_to_names_is_refused() {
         assert!(load("badvoices", text).is_err(), "{text}");
     }
 }
+
+#[test]
+fn test_lang_defaults_to_es_and_reads_es_or_en() {
+    use e_voice_core::schema::lang::Lang;
+    assert_eq!(Settings::default().daemon.lang, Lang::Es);
+    assert_eq!(
+        load("langen", "[daemon]\nlang = \"en\"\n").unwrap().daemon.lang,
+        Lang::En
+    );
+    assert_eq!(
+        load("langes", "[daemon]\nlang = \"es\"\n").unwrap().daemon.lang,
+        Lang::Es
+    );
+}
+
+#[test]
+fn test_a_lang_that_is_not_one_of_the_two_is_refused() {
+    for value in ["\"fr\"", "\"ES\"", "\"\"", "1", "true"] {
+        assert!(
+            load("langbad", &format!("[daemon]\nlang = {value}\n")).is_err(),
+            "{value}"
+        );
+    }
+}

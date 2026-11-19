@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
+use e_voice_core::schema::lang::Lang;
 use serde::{Deserialize, Serialize};
 
 /// The daemon's own table. `host` is never `[server] host`: the daemon owns the audio devices, so it
@@ -10,6 +11,8 @@ use serde::{Deserialize, Serialize};
 /// one listen waits for someone to start speaking. `voices` maps an MCP client to the voice it speaks with
 /// when a call names none: by its `X-Evoice-Client` header, which every client can send, else by the name
 /// it declares, which counts only when the request itself carries it (protocol 2026-07-28 and later).
+/// `lang` is the fallback language of what the hooks say: the notices, and a message whose language its
+/// words do not decide.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DaemonConfig {
@@ -22,6 +25,7 @@ pub struct DaemonConfig {
     #[serde(with = "humantime_serde")]
     pub listen: Duration,
     pub voices: BTreeMap<String, String>,
+    pub lang: Lang,
 }
 
 impl Default for DaemonConfig {
@@ -35,6 +39,7 @@ impl Default for DaemonConfig {
             input: None,
             listen: Duration::from_secs(15),
             voices: BTreeMap::new(),
+            lang: Lang::Es,
         }
     }
 }

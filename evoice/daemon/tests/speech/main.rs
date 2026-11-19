@@ -6,6 +6,10 @@
     clippy::expect_used
 )]
 
+mod digest;
+mod notice;
+mod property;
 mod scripted;
+mod table;
 mod tts;
 mod voices;

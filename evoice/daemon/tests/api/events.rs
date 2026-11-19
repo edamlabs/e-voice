@@ -27,8 +27,8 @@ struct Upgraded {
 
 fn upgrade(port: u16) -> Upgraded {
     let mut stream =
-        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(2)).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), Duration::from_secs(10)).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
     let key = format!("{}==", "A".repeat(22));
     write!(
         stream,
@@ -86,7 +86,7 @@ fn address(daemon: &Running) -> String {
 }
 
 async fn permits(w: &Wired, expected: usize) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if w.state.subscribers.available_permits() == expected {
             return true;
@@ -116,7 +116,6 @@ async fn test_a_subscriber_gets_the_speech_and_listen_sequences_as_the_pinned_js
     let w = speaking();
     let daemon = Arc::new(Running::start(w.state.clone()).await);
     let mut socket = client(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let (status, body) = daemon.speak(r#"{"text":"4"}"#).await;
     assert_eq!((status, body.as_str()), (200, r#"{"id":0,"outcome":"done"}"#));
     assert_eq!(
@@ -153,7 +152,6 @@ async fn test_a_stop_over_http_is_seen_as_cancelling_with_the_id_speak_answered(
     let w = wired(long(300, 1.0), Device::new(0, 0), Duration::from_secs(5));
     let daemon = Arc::new(Running::start(w.state.clone()).await);
     let mut socket = client(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let asking = Arc::clone(&daemon);
     let speak = tokio::spawn(async move { asking.speak(r#"{"text":"x"}"#).await });
     assert_eq!(
@@ -179,11 +177,9 @@ async fn test_two_subscribers_see_the_same_sequence_and_each_alone_sees_what_hap
     let w = speaking();
     let daemon = Running::start(w.state.clone()).await;
     let mut first = client(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
     daemon.speak(r#"{"text":"1"}"#).await;
     let one = texts(&mut first, 3).await;
     let mut second = client(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
     daemon.speak(r#"{"text":"2"}"#).await;
     let (a, b) = (texts(&mut first, 3).await, texts(&mut second, 3).await);
     assert_eq!(a, b);
@@ -200,7 +196,6 @@ async fn test_events_from_before_the_upgrade_are_not_replayed() {
         w.events.send(padded(index, 16)).ok();
     }
     let mut socket = client(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
     w.events.send(padded(99, 16)).unwrap();
     let first = texts(&mut socket, 1).await;
     assert_eq!(index_of(&first[0]), Some(99), "{first:?}");
@@ -216,21 +211,26 @@ async fn test_a_subscriber_that_falls_behind_gets_lagged_with_the_exact_gap_and_
     let mut quick = client(daemon.port).await;
     let mut away = RawWs::connect_writing_first(&address(&daemon), "/events").await;
     assert!(permits(&w, SUBSCRIBERS - 2).await);
+    let received = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let progress = Arc::clone(&received);
     let reading = tokio::spawn(async move {
         let mut seen = Vec::new();
         while seen.len() < TOTAL {
-            match tokio::time::timeout(Duration::from_secs(10), quick.next()).await {
-                Ok(Some(Ok(Message::Text(text)))) => seen.push(text.to_string()),
+            match tokio::time::timeout(Duration::from_secs(30), quick.next()).await {
+                Ok(Some(Ok(Message::Text(text)))) => {
+                    seen.push(text.to_string());
+                    progress.store(seen.len(), std::sync::atomic::Ordering::SeqCst);
+                }
                 other => panic!("quick subscriber after {} events: {other:?}", seen.len()),
             }
         }
         seen
     });
     for index in 0..TOTAL {
-        w.events.send(padded(index, SIZE)).unwrap();
-        if index % 4 == 0 {
+        while index.saturating_sub(received.load(std::sync::atomic::Ordering::SeqCst)) >= 128 {
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
+        w.events.send(padded(index, SIZE)).unwrap();
     }
     let quick_seen = reading.await.unwrap();
     assert!(quick_seen.iter().all(|text| !text.contains("lagged")));

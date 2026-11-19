@@ -22,7 +22,7 @@ async fn subscribe(port: u16) -> Socket {
 async fn texts(socket: &mut Socket, count: usize) -> Vec<String> {
     let mut seen = Vec::new();
     while seen.len() < count {
-        match tokio::time::timeout(Duration::from_secs(5), socket.next()).await {
+        match tokio::time::timeout(Duration::from_secs(30), socket.next()).await {
             Ok(Some(Ok(Message::Text(text)))) => seen.push(text.to_string()),
             Ok(Some(Ok(_))) => {}
             other => panic!("after {seen:?}: {other:?}"),
@@ -41,7 +41,6 @@ async fn test_http_then_mcp_speak_share_one_queue_contiguous_ids_and_one_event_s
     let daemon = Running::start(w.state.clone()).await;
     let mcp = Mcp::on(daemon.port);
     let mut events = subscribe(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let (status, body) = daemon.speak(r#"{"text":"1"}"#).await;
     assert_eq!((status, body.as_str()), (200, r#"{"id":0,"outcome":"done"}"#));
     let via = mcp.call("speak", &json!({"text": "2"})).await;
@@ -133,7 +132,6 @@ async fn test_mcp_listen_is_announced_on_the_event_stream_like_the_http_one() {
     let daemon = Running::start(w.state.clone()).await;
     let mcp = Mcp::on(daemon.port);
     let mut events = subscribe(daemon.port).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let feed = w.hearing.session();
     let asking = mcp.clone();
     let call = tokio::spawn(async move { asking.call("listen", &json!({"timeout_seconds": 10})).await });

@@ -7,6 +7,7 @@ use tokio::net::TcpListener;
 
 use crate::api::events::events;
 use crate::api::health::health;
+use crate::api::hooks;
 use crate::api::listen::listen;
 use crate::api::speak::speak;
 use crate::api::state::AppState;
@@ -36,6 +37,8 @@ impl Server {
             .route("/listen", post(listen))
             .route("/stop", post(stop))
             .route("/events", get(events))
+            .route("/hooks/stop", post(hooks::stop))
+            .route("/hooks/notification", post(hooks::notification))
             .nest_service("/mcp", state.mcp.clone().service())
             .with_state(state)
     }

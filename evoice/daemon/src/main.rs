@@ -12,6 +12,7 @@ use e_voice_daemon::core::settings::Settings;
 use e_voice_daemon::hearing::stt::SttHearing;
 use e_voice_daemon::mcp::server::McpServer;
 use e_voice_daemon::speech::base::Voices;
+use e_voice_daemon::speech::table::VoiceTable;
 use e_voice_daemon::speech::tts::TtsSpeech;
 use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::CaptureThread;
@@ -93,14 +94,16 @@ impl Cli {
                 let listener = Listener::new(hearing, capture, settings.daemon.listen, events.clone());
                 let listen: Arc<dyn Listen> = Arc::new(listener);
                 let subscribers = Arc::new(Semaphore::new(SUBSCRIBERS));
-                let table = settings.daemon.voices.clone();
-                let mcp = McpServer::new(speech.clone(), Arc::clone(&listen), voices, table);
+                let table = VoiceTable::new(settings.daemon.voices.clone());
+                let mcp = McpServer::new(speech.clone(), Arc::clone(&listen), voices, table.clone());
                 let state = AppState {
                     speech,
                     listen,
                     events,
                     subscribers,
                     mcp,
+                    table,
+                    lang: settings.daemon.lang,
                 };
                 Server::serve(&settings, state, Self::run_shutdown(terminate)).await?;
             }

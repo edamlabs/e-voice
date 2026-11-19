@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,12 +18,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::speech::base::{SpeechRequest, Voices};
+use crate::speech::table::{CLIENT, VoiceTable};
 use crate::workflow::listen::Listen;
 use crate::workflow::queue::SpeechQueue;
-
-/// The header a client is registered with to be told apart (`claude mcp add … --header "X-Evoice-Client: …"`):
-/// the one identity every client can carry, whatever its protocol version.
-const CLIENT: &str = "x-evoice-client";
 
 /// The largest request `/mcp` takes: 64 KiB. A text is at most 4096 characters, about 24 KiB with every
 /// character JSON-escaped; past the cap rmcp answers 413 while the body is still arriving.
@@ -53,7 +49,7 @@ pub struct McpServer {
     speech: SpeechQueue,
     listen: Arc<dyn Listen>,
     voices: Arc<dyn Voices>,
-    table: Arc<BTreeMap<String, String>>,
+    table: VoiceTable,
     tool_router: ToolRouter<Self>,
 }
 
@@ -70,12 +66,6 @@ impl McpServer {
             .get::<Parts>()
             .and_then(|parts| parts.headers.get(CLIENT)?.to_str().ok().map(str::to_owned))
             .or_else(|| context.client_info().map(|info| info.name))
-    }
-
-    /// The call's own voice, else the one configured for its caller, else none: the service's default.
-    fn speak_voice(&self, asked: Option<String>, context: &RequestContext<RoleServer>) -> Option<String> {
-        let caller = Self::speak_caller(context);
-        asked.or_else(|| self.table.get(&caller?).cloned())
     }
 
     /// A failure of ours, readable by the model: the message and the HTTP status the same failure has on
@@ -97,17 +87,12 @@ impl McpServer {
     // ##### PUBLIC #####
 
     #[must_use]
-    pub fn new(
-        speech: SpeechQueue,
-        listen: Arc<dyn Listen>,
-        voices: Arc<dyn Voices>,
-        table: BTreeMap<String, String>,
-    ) -> Self {
+    pub fn new(speech: SpeechQueue, listen: Arc<dyn Listen>, voices: Arc<dyn Voices>, table: VoiceTable) -> Self {
         Self {
             speech,
             listen,
             voices,
-            table: Arc::new(table),
+            table,
             tool_router: Self::tool_router(),
         }
     }
@@ -135,7 +120,8 @@ impl McpServer {
         Parameters(params): Parameters<SpeakParams>,
         context: RequestContext<RoleServer>,
     ) -> CallToolResult {
-        let voice = self.speak_voice(params.voice, &context);
+        let caller = Self::speak_caller(&context);
+        let voice = self.table.voice(params.voice, caller.as_deref());
         let request = SpeechRequest {
             text: params.text,
             voice,

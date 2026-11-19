@@ -16,6 +16,7 @@ nav = [
     { "Clients" = "guide/clients.md" },
     { "Wake word" = "guide/wake.md" },
     { "Voices" = "guide/voices.md" },
+    { "Claude Code" = "guide/claude.md" },
   ] },
   { "API" = [
     { "Protocols" = "api/index.md" },

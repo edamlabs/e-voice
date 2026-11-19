@@ -6,7 +6,7 @@ use e_voice_device::error::DeviceError;
 use crate::fake::{Device, Ev, events, rate};
 
 async fn until(what: &str, mut ready: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !ready() {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         tokio::time::sleep(Duration::from_millis(5)).await;

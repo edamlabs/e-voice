@@ -59,9 +59,12 @@ pub enum SpeakError {
     Speech(SpeechError),
 }
 
+/// How a job ends, sent to whoever is waiting for it: its id, and the outcome or the failure.
+type Ended = (u64, Result<Outcome, SpeakError>);
+
 struct Job {
     request: SpeechRequest,
-    done: oneshot::Sender<(u64, Result<Outcome, SpeakError>)>,
+    done: oneshot::Sender<Ended>,
 }
 
 enum Control {
@@ -137,7 +140,8 @@ impl SpeechQueue {
         }
     }
 
-    /// One text from the service to the device; returns the next free id.
+    /// One text from the service to the device; returns the next free id. A failure nobody waits for (a
+    /// submitted text) is logged as `speech.failed`, or it would vanish.
     async fn start_job<S: Speech>(
         speech: &S,
         audio: &AudioThread,
@@ -159,7 +163,9 @@ impl SpeechQueue {
             }
             Streamed::Stopped(reply, utterance) => (Ok(Outcome::Cancelled), Some((reply, utterance))),
         };
-        done.send((id, result)).ok();
+        if let Err((_, Err(error))) = done.send((id, result)) {
+            tracing::warn!(%error, id, "speech.failed");
+        }
         let next = id.saturating_add(1);
         match stop {
             Some((reply, utterance)) => Self::start_cancel(id, utterance, audio, jobs, next, reply, status).await,
@@ -264,6 +270,22 @@ impl SpeechQueue {
         next
     }
 
+    /// Validates `request` and hands it to the queue's task without waiting: the text is accepted, or
+    /// refused, before this returns.
+    fn common_enqueue(&self, request: SpeechRequest) -> Result<oneshot::Receiver<Ended>, SpeakError> {
+        (!request.text.trim().is_empty())
+            .then_some(())
+            .ok_or(SpeakError::Empty)?;
+        let length = request.text.chars().count();
+        (length <= TEXT).then_some(()).ok_or(SpeakError::TooLong(length))?;
+        let (done, spoken) = oneshot::channel();
+        self.jobs.try_send(Job { request, done }).map_err(|error| match error {
+            TrySendError::Full(_) => SpeakError::Full,
+            TrySendError::Closed(_) => SpeakError::Stopped,
+        })?;
+        Ok(spoken)
+    }
+
     // ##########################################################
 
     // ##### PUBLIC #####
@@ -291,18 +313,18 @@ impl SpeechQueue {
     /// Empty text, a text over [`TEXT`] characters, a full queue, a stopped queue, a device that cannot
     /// open, or the speech service failing.
     pub async fn say(&self, request: SpeechRequest) -> Result<(u64, Outcome), SpeakError> {
-        (!request.text.trim().is_empty())
-            .then_some(())
-            .ok_or(SpeakError::Empty)?;
-        let length = request.text.chars().count();
-        (length <= TEXT).then_some(()).ok_or(SpeakError::TooLong(length))?;
-        let (done, spoken) = oneshot::channel();
-        self.jobs.try_send(Job { request, done }).map_err(|error| match error {
-            TrySendError::Full(_) => SpeakError::Full,
-            TrySendError::Closed(_) => SpeakError::Stopped,
-        })?;
+        let spoken = self.common_enqueue(request)?;
         let (id, ended) = spoken.await.map_err(|_| SpeakError::Stopped)?;
         ended.map(|outcome| (id, outcome))
+    }
+
+    /// Queues `request` and returns at once, without waiting for it to be spoken: `say` without its
+    /// answer. A later failure is only logged (`speech.failed`).
+    ///
+    /// # Errors
+    /// Empty text, a text over [`TEXT`] characters, a full queue, or a stopped queue.
+    pub fn submit(&self, request: SpeechRequest) -> Result<(), SpeakError> {
+        self.common_enqueue(request).map(drop)
     }
 
     /// Silences what is playing and drops what waits; nothing to do while idle.

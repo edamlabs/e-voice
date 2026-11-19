@@ -28,9 +28,17 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     own voice, keyed by the `X-Evoice-Client` header — a preference, never a permission.
     `claude mcp add --transport http evoice http://127.0.0.1:5700/mcp --header "X-Evoice-Client: <name>"`.
     The MCP SDK takes the stripped binary from 6.8 to 11.3 MB.
+  - Claude Code hooks (TODO_vehicle step 9): `POST /hooks/stop` speaks the first two sentences of Claude's reply —
+    prose only, at most 300 characters, in the language of its words; `POST /hooks/notification` says when Claude
+    waits for a permission or has been idle. Each answers at once and never slows Claude Code. `[daemon] lang`
+    (`es` by default) is the notices' language and the fallback. Guide: `docs/guide/claude.md`, with the
+    `settings.json` snippet and dictation by a desktop shortcut over `ecli listen` (press-to-start; hold-to-talk
+    is not built).
   - Evidence: every endpoint proven against scripted TTS and STT servers and fake devices, the MCP tools with a
-    real client; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage` 91.32 % lines. Not proven: no
-    real speaker or microphone has been heard through it, and no Claude Code session has called the tools.
+    real client; the spoken digest held to its properties over 4000 generated inputs — every character a letter, a
+    digit, a space or speakable punctuation; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage`
+    91.53 % lines. Not proven: no real speaker or microphone has been heard through it, and no Claude Code
+    session has called the tools or fired the hooks.
 - `evoice/device`: the microphone and speaker code of `ecli` as a library; `ecli`'s commands and output are
   byte-identical. `evoice/core` gains an `engine` feature (on by default) so a crate can use its settings, logging
   and resampling without linking the model runtime.

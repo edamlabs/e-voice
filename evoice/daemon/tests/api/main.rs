@@ -11,6 +11,7 @@ mod events;
 #[path = "../fake/mod.rs"]
 mod fake;
 mod health;
+mod hooks;
 mod http;
 mod listen;
 #[allow(dead_code)]

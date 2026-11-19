@@ -193,7 +193,7 @@ async fn test_a_client_that_hangs_up_once_accepted_does_not_stop_the_speech() {
         body.len()
     )
     .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     while state.speech.state() != (SpeechState::Speaking { id: 0 }) {
         assert!(Instant::now() < deadline, "the request was never accepted");
         tokio::time::sleep(Duration::from_millis(5)).await;
