@@ -175,22 +175,12 @@ impl SpeechDigest {
         })
     }
 
-    /// Whether `word` closes a sentence: it ends with a sentence mark, and is not an abbreviation.
-    fn of_ends(word: &str) -> bool {
-        let core = word.trim_end_matches(['"', '\'', ')', ']', '»', '”']);
-        let lower = core.trim_start_matches(OPENERS).to_lowercase();
-        let abbreviation = Lang::ALL
-            .iter()
-            .any(|lang| Self::of_abbreviations(*lang).split(' ').any(|known| known == lower));
-        core.ends_with(ENDS) && !abbreviation
-    }
-
     /// Every block's sentences, in order: a block boundary always ends one.
     fn of_sentences(&self) -> impl Iterator<Item = String> + '_ {
         self.blocks.iter().flat_map(|block| {
             let words: Vec<&str> = block.split(' ').collect();
             words
-                .split_inclusive(|word| Self::of_ends(word))
+                .split_inclusive(|word| Self::ends(word))
                 .map(|sentence| sentence.join(" "))
                 .collect::<Vec<_>>()
         })
@@ -254,6 +244,18 @@ impl SpeechDigest {
         }
     }
 
+    /// The markdown parsed into its readable blocks, the last one closed.
+    fn speakable_parse(markdown: &str) -> Self {
+        let options = Options::ENABLE_TABLES
+            | Options::ENABLE_FOOTNOTES
+            | Options::ENABLE_STRIKETHROUGH
+            | Options::ENABLE_TASKLISTS;
+        let events = Parser::new_ext(markdown, options);
+        let mut digest = events.fold(Self::default(), Self::of_event);
+        digest.of_break();
+        digest
+    }
+
     // ##########################################################
 
     // ##### PUBLIC #####
@@ -262,18 +264,33 @@ impl SpeechDigest {
     /// `None` when nothing in it reads aloud.
     #[must_use]
     pub fn of(markdown: &str, fallback: Lang) -> Option<(String, Lang)> {
-        let options = Options::ENABLE_TABLES
-            | Options::ENABLE_FOOTNOTES
-            | Options::ENABLE_STRIKETHROUGH
-            | Options::ENABLE_TASKLISTS;
-        let events = Parser::new_ext(markdown, options);
-        let mut digest = events.fold(Self::default(), Self::of_event);
-        digest.of_break();
-        let text = digest.of_sentences().take(SENTENCES).collect::<Vec<_>>().join(" ");
+        let text = Self::speakable(markdown)
+            .into_iter()
+            .take(SENTENCES)
+            .collect::<Vec<_>>()
+            .join(" ");
         (!text.is_empty()).then(|| {
             let text = Self::of_cap(text);
             let lang = Self::of_lang(&text, fallback);
             (text, lang)
         })
+    }
+
+    /// All of `markdown` that reads aloud, sentence by sentence, with no cut: a block or a list item always
+    /// ends a sentence. [`SpeechDigest::of`] is its first [`SENTENCES`], so the rule lives here once.
+    #[must_use]
+    pub fn speakable(markdown: &str) -> Vec<String> {
+        Self::speakable_parse(markdown).of_sentences().collect()
+    }
+
+    /// Whether `word` closes a sentence: it ends with a sentence mark, and is not an abbreviation.
+    #[must_use]
+    pub fn ends(word: &str) -> bool {
+        let core = word.trim_end_matches(['"', '\'', ')', ']', '»', '”']);
+        let lower = core.trim_start_matches(OPENERS).to_lowercase();
+        let abbreviation = Lang::ALL
+            .iter()
+            .any(|lang| Self::of_abbreviations(*lang).split(' ').any(|known| known == lower));
+        core.ends_with(ENDS) && !abbreviation
     }
 }

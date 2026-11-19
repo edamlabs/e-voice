@@ -5,4 +5,5 @@ pub mod hearing;
 pub mod mcp;
 pub mod schema;
 pub mod speech;
+pub mod talk;
 pub mod workflow;

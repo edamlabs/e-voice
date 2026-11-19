@@ -106,7 +106,7 @@ async fn test_an_unknown_caller_gets_no_voice_so_the_service_default() {
         .await
         .result();
     assert_eq!(last_voice(&seen), None);
-    mcp.call_with("speak", &json!({"text": "2"}), &[]).await.result();
+    mcp.call_with("speak", &json!({"text": "2"}), &[]).await.speak_ok();
     assert_eq!(last_voice(&seen), None);
     mcp.post(&declared("nobody", &json!({"text": "3"})), &NEGOTIATED)
         .await
@@ -159,4 +159,17 @@ async fn test_the_voice_is_never_the_language_and_the_lang_is_never_set() {
     let request = seen.lock().unwrap().last().unwrap().clone();
     assert_eq!((request.voice, request.lang.is_none()), (None, true));
     daemon.stop().await;
+}
+
+trait SpeakOk {
+    fn speak_ok(self) -> serde_json::Value;
+}
+
+impl SpeakOk for crate::client::Answer {
+    /// The result of a `speak` that must have been spoken: a tool error here would hide behind an empty log.
+    fn speak_ok(self) -> serde_json::Value {
+        let result = self.result();
+        assert_eq!(result["isError"], false, "the speak failed: {result}");
+        result
+    }
 }
