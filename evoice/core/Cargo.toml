@@ -34,18 +34,18 @@ bzip2 = { version = "0.6.1", optional = true }
 figment = { version = "0.10.19", features = ["toml", "env"] }
 futures-util = { version = "0.3.34", optional = true }
 hex = { version = "0.4.3", optional = true }
-ort = { version = "2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-27", "tracing"], optional = true }
+ort = { version = "2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-27", "tracing"], optional = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream"], optional = true }
-rubato = "5.0.1"
+rubato = "5.1.0"
 serde = { version = "1.0.229", features = ["derive"] }
-sha2 = { version = "0.11.0", optional = true }
+sha2 = { version = "0.11.1", optional = true }
 sherpa-onnx = { version = "1.13.8", default-features = false, features = ["shared"], optional = true }
 symphonia = { version = "0.6.1", default-features = false, features = ["wav", "pcm", "mp3", "aac", "isomp4", "flac", "ogg", "vorbis", "mkv", "opt-simd"], optional = true }
 symphonia-adapter-libopus = { version = "0.3.0", optional = true }
 tar = { version = "0.4.46", optional = true }
 tempfile = { version = "3.27.0", optional = true }
 thiserror = "2.0.21"
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync"], optional = true }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync"], optional = true }
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
@@ -54,7 +54,7 @@ walkdir = { version = "2.5.0", optional = true }
 
 [dev-dependencies]
 figment = { version = "0.10.19", features = ["test", "toml", "env"] }
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync", "time"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "fs", "io-util", "sync", "time"] }
 wiremock = "0.6.5"
 
 [lints]

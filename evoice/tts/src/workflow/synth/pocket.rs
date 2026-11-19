@@ -224,7 +224,7 @@ impl Worker {
             file.exists()
                 .then_some(())
                 .ok_or_else(|| BackendError::Missing(file.clone()))?;
-            Session::builder()
+            Session::builder(Runtime::environment().map_err(|_| BackendError::Load("onnxruntime"))?)
                 .map_err(|_| BackendError::Load(name))?
                 .with_intra_threads(usize::from(threads))
                 .map_err(|_| BackendError::Load(name))?

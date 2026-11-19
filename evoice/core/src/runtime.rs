@@ -1,5 +1,7 @@
 use std::sync::OnceLock;
 
+use ort::environment::Environment;
+
 const SHERPA: &str = "e-voice-sherpa.conf";
 const SPINLESS: &str =
     "SessionConfig.session.intra_op.allow_spinning=0\nSessionConfig.session.inter_op.allow_spinning=0\n";
@@ -17,24 +19,37 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// Binds ort to the onnxruntime sherpa already loaded (once per process) and reports versions.
+    /// The ort environment bound to the onnxruntime sherpa already loaded, built once per process;
+    /// every ort session is built on it.
     ///
     /// # Errors
-    /// The shared library cannot be opened by ort.
-    pub fn probe() -> Result<Self, RuntimeError> {
-        static BOUND: OnceLock<Result<(), RuntimeError>> = OnceLock::new();
-        BOUND
+    /// The shared library cannot be opened by ort, or ort cannot build its environment on it.
+    pub fn environment() -> Result<&'static Environment, RuntimeError> {
+        /// ort keeps only a weak reference to its environment: the process holds the strong one.
+        static ENVIRONMENT: OnceLock<Result<Environment, RuntimeError>> = OnceLock::new();
+        ENVIRONMENT
             .get_or_init(|| {
                 let library = format!(
                     "{}onnxruntime{}",
                     std::env::consts::DLL_PREFIX,
                     std::env::consts::DLL_SUFFIX
                 );
-                let builder = ort::init_from(library).map_err(|error| RuntimeError(error.to_string()))?;
-                builder.with_name("e-voice").commit();
-                Ok(())
+                ort::init_from(library)
+                    .map_err(|error| RuntimeError(error.to_string()))?
+                    .with_name("e-voice")
+                    .build()
+                    .map_err(|error| RuntimeError(error.to_string()))
             })
-            .clone()?;
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    /// Binds ort to the onnxruntime sherpa already loaded (once per process) and reports versions.
+    ///
+    /// # Errors
+    /// The shared library cannot be opened by ort, or ort cannot build its environment on it.
+    pub fn probe() -> Result<Self, RuntimeError> {
+        Self::environment()?;
         Ok(Self {
             sherpa: sherpa_onnx::version(),
             git: sherpa_onnx::git_sha1(),
