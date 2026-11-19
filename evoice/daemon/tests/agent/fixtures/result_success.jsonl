@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_api_ms":0,"stop_reason":"end_turn","session_id":"00000000-0000-4000-8000-000000000000","total_cost_usd":0,"usage":{"input_tokens":0,"output_tokens":0},"permission_denials":[],"terminal_reason":"completed","num_turns":1,"result":"Hola, mundo.","uuid":"00000000-0000-4000-8000-000000000020"}

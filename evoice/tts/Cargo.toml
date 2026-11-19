@@ -39,7 +39,7 @@ tracing = "0.1.44"
 ### axum's own tungstenite, only for its error type: an oversized message closes with 1009, not as a hang-up.
 ### It must stay the version axum resolves to (Renovate bumps them apart); if they drift the downcast misses,
 ### the close falls back to 1000, and `cargo test -p e-voice-tts --test api frames::` goes red (the over-cap test).
-tungstenite = "0.30.0"
+tungstenite = "0.29.0"
 unicode-segmentation = "1.13.3"
 utoipa = { version = "6.0.0", features = ["axum_extras"] }
 utoipa-scalar = { version = "0.4.0", features = ["axum"] }

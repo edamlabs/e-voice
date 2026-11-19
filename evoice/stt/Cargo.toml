@@ -36,12 +36,13 @@ tracing = "0.1.44"
 ### axum's own tungstenite, only for its error type: an oversized message closes with 1009, not as a hang-up.
 ### It must stay the version axum resolves to (Renovate bumps them apart); if they drift the downcast misses,
 ### the close falls back to 1000, and `cargo test -p e-voice-stt --test api frames::` goes red (the over-cap tests).
-tungstenite = "0.30.0"
+tungstenite = "0.29.0"
 utoipa = { version = "6.0.0", features = ["axum_extras"] }
 utoipa-scalar = { version = "0.4.0", features = ["axum"] }
 uuid = { version = "1.29.3", features = ["v4"] }
 
 [dev-dependencies]
+e-voice-daemon = { path = "../daemon" }
 figment = { version = "0.10.19", features = ["test", "toml", "env"] }
 futures-util = "0.3.34"
 proptest = "1.12.0"

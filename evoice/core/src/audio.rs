@@ -1,18 +1,28 @@
 use std::fmt::{self, Debug};
+#[cfg(feature = "engine")]
 use std::io::Cursor;
+#[cfg(feature = "engine")]
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{Fft, FixedSync, Indexing, Resampler};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "engine")]
 use symphonia::core::codecs::audio::AudioDecoderOptions;
+#[cfg(feature = "engine")]
 use symphonia::core::codecs::registry::CodecRegistry;
+#[cfg(feature = "engine")]
 use symphonia::core::errors::Error as MediaError;
+#[cfg(feature = "engine")]
 use symphonia::core::formats::probe::Hint;
+#[cfg(feature = "engine")]
 use symphonia::core::formats::{FormatOptions, TrackType};
+#[cfg(feature = "engine")]
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
+#[cfg(feature = "engine")]
 use symphonia::core::meta::MetadataOptions;
+#[cfg(feature = "engine")]
 use symphonia_adapter_libopus::OpusDecoder;
 
 const CHUNK: usize = 1_024;
@@ -267,9 +277,11 @@ impl AudioGain {
 
 /// A whole uploaded file (wav, mp3, m4a/aac, flac, ogg/vorbis, ogg/opus, webm/opus) →
 /// mono f32 at `rate`. The container is sniffed; `extension` is only a hint.
+#[cfg(feature = "engine")]
 #[derive(Debug)]
 pub struct AudioFile;
 
+#[cfg(feature = "engine")]
 impl AudioFile {
     // ##### PRIVATE #####
 
@@ -428,10 +440,13 @@ impl AudioFile {
 #[cfg(test)]
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 mod tests {
+    #[cfg(feature = "engine")]
     use std::path::PathBuf;
     use std::time::Duration;
 
-    use crate::audio::{AudioEncoding, AudioFile, AudioGain, AudioIngest};
+    #[cfg(feature = "engine")]
+    use crate::audio::AudioFile;
+    use crate::audio::{AudioEncoding, AudioGain, AudioIngest};
 
     fn s16(samples: &[i16]) -> Vec<u8> {
         samples.iter().flat_map(|sample| sample.to_le_bytes()).collect()
@@ -577,6 +592,7 @@ mod tests {
         assert!(AudioIngest::new(0, 16_000, AudioEncoding::S16le).is_err());
     }
 
+    #[cfg(feature = "engine")]
     #[test]
     fn test_file_decodes_every_openai_format_to_16k_mono() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/resources/audio");
@@ -598,6 +614,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "engine")]
     #[test]
     fn test_file_rejects_garbage() {
         assert!(AudioFile::decode(b"definitely not audio".to_vec(), Some("mp3"), 16_000, Duration::MAX).is_err());

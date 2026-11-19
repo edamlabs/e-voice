@@ -27,6 +27,21 @@
   },
   "packageRules": [
     {
+      "description": "tungstenite in the services and the daemon is pinned to the one axum resolves, for its error type (the 1009 close): it moves by hand with axum, never alone (#28 moved it alone and broke main).",
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchPackageNames": [
+        "tungstenite"
+      ],
+      "matchFileNames": [
+        "evoice/stt/Cargo.toml",
+        "evoice/tts/Cargo.toml",
+        "evoice/daemon/Cargo.toml"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Service runtime, the whole Rust tree: one weekly PR.",
       "matchManagers": [
         "cargo"

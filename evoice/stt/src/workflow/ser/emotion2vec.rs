@@ -98,12 +98,12 @@ impl Emotion2vecSer {
     /// Missing files, a malformed head, or onnxruntime rejecting the backbone.
     pub fn new(dir: &Path, threads: u16, model: &str) -> Result<Self, BackendError> {
         let (backbone, head) = (std::path::PathBuf::from(Parts::onnx(dir, "")?), dir.join(HEAD));
-        Runtime::probe().map_err(|_| BackendError::Load("onnxruntime"))?;
+        let environment = Runtime::environment().map_err(|_| BackendError::Load("onnxruntime"))?;
         let raw = std::fs::read(&head).map_err(|_| BackendError::Missing(head.clone()))?;
         let head: Head = serde_json::from_slice(&raw).map_err(|_| BackendError::Load("emotion2vec head"))?;
         let dim = head.dim().ok_or(BackendError::Load("emotion2vec head"))?;
         let load = |_| BackendError::Load("emotion2vec backbone");
-        let session = Session::builder()
+        let session = Session::builder(environment)
             .map_err(load)?
             .with_intra_threads(usize::from(threads))
             .map_err(|_| BackendError::Load("emotion2vec threads"))?

@@ -1,0 +1,7 @@
+Silence the daemon's voice and drop every text waiting¶
+¶
+Usage: ecli stop [OPTIONS]¶
+¶
+Options:¶
+      --url <URL>  Daemon base URL [env: ECLI_DAEMON_URL=] [default: http://127.0.0.1:5700]¶
+  -h, --help       Print help¶

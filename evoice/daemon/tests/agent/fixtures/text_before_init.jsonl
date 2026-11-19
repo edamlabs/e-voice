@@ -1,0 +1,1 @@
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hola antes de init"}},"session_id":"00000000-0000-4000-8000-000000000000","parent_tool_use_id":null,"uuid":"00000000-0000-4000-8000-000000000002","api_message_id":"msg_PLACEHOLDER"}

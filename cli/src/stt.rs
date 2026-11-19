@@ -4,6 +4,9 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use clap::Args;
+use e_voice_device::capture::cpal::CpalCapture;
+use e_voice_device::error::DeviceError;
+use e_voice_device::host::MONITOR;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use tokio::net::TcpStream;
@@ -12,7 +15,6 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-use crate::mic::{MONITOR, Mic, MicError};
 use crate::wav::Wav;
 
 const CLEAR: &str = "\r\x1b[2K";
@@ -27,14 +29,24 @@ type Tap = (std::sync::Arc<std::sync::atomic::AtomicU32>, String);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SttError {
-    #[error(transparent)]
-    Mic(#[from] MicError),
+    #[error("{}{}", .0, Self::hint(.0))]
+    Device(#[from] DeviceError),
     #[error("wav: {0}")]
     Wav(#[from] hound::Error),
     #[error("websocket: {0}")]
     Socket(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("server closed the stream: {0}")]
     Closed(String),
+}
+
+impl SttError {
+    /// A missing input points at the device list.
+    fn hint(error: &DeviceError) -> &'static str {
+        match error {
+            DeviceError::Input(_) => "; run `ecli devices`",
+            DeviceError::Output | DeviceError::Format(_) | DeviceError::Backend(_) | DeviceError::Resample(_) => "",
+        }
+    }
 }
 
 /// Live transcription from the microphone (or a WAV) through `/v1/stream`.
@@ -219,7 +231,17 @@ impl SttArgs {
         let (mic, rate) = match &self.wav {
             Some(path) => (None, Wav::open(path, chunks_tx)?),
             None => {
-                let mic = Mic::open(self.device.as_deref(), chunks_tx)?;
+                let mic = CpalCapture::open(
+                    self.device.as_deref(),
+                    move |mono: &[f32]| {
+                        let bytes = mono
+                            .iter()
+                            .flat_map(|sample| ((sample.clamp(-1.0, 1.0) * 32_767.0) as i16).to_le_bytes())
+                            .collect();
+                        chunks_tx.try_send(bytes).ok();
+                    },
+                    |error| eprintln!("ecli: microphone: {error}"),
+                )?;
                 eprintln!("{DIM}ecli · {} · {} Hz · Ctrl+C to finish{RESET}", mic.name, mic.rate);
                 if mic.name.starts_with(MONITOR) {
                     eprintln!(

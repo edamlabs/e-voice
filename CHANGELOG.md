@@ -8,6 +8,50 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Added
 
+- `evoiced`, the daemon that owns the microphone and the speaker (TODO_vehicle step 7): `evoiced serve` on
+  `127.0.0.1:5700` — loopback unless `[daemon] host` says otherwise, never the services' `[server] host`.
+  - `POST /speak {text, voice?, lang?}`: through the TTS service, one voice at a time, answering when the audio has
+    drained. At most 4096 characters, a queue of 16 (429 past it), never more than 2 s of audio held ahead of the
+    speaker.
+  - `POST /stop`: the voice cut within a frame and the queue emptied; the cut requests answer `cancelled`.
+  - `POST /listen {timeout?}`: the microphone opened for one utterance, answered as text, language and emotion.
+    The timeout (`[daemon] listen`, 15 s; at most 300 s) bounds the wait for someone to start speaking.
+  - `GET /events`: a WebSocket of the daemon's events — speech states, listening open and closed, partials, what
+    was heard, and `lagged` for a subscriber that fell behind; at most 16 subscribers.
+  - `GET /health`. `[daemon]` keys: `host`, `port`, `tts`, `stt`, `output`, `input`, `listen`; the services accept
+    the table in the shared `evoice.toml`. A daemon that cannot install its SIGTERM handler does not start.
+  - `ecli say | stop | listen`: thin clients of the daemon (`--url`, `ECLI_DAEMON_URL`); `listen --struct` prints
+    text, language and emotion as one JSON line.
+  - MCP at `/mcp` (TODO_vehicle step 8): the tools `speak`, `stop`, `listen` and `list_voices` on the same queue
+    and listener as the HTTP doors, so ids, limits and `/events` are shared. Stateless, served to clients of every
+    protocol version; a body of at most 64 KiB; a loopback Host only. `[daemon.voices]` gives a registration its
+    own voice, keyed by the `X-Evoice-Client` header — a preference, never a permission.
+    `claude mcp add --transport http evoice http://127.0.0.1:5700/mcp --header "X-Evoice-Client: <name>"`.
+    The MCP SDK takes the stripped binary from 6.8 to 11.3 MB.
+  - Claude Code hooks (TODO_vehicle step 9): `POST /hooks/stop` speaks the first two sentences of Claude's reply —
+    prose only, at most 300 characters, in the language of its words; `POST /hooks/notification` says when Claude
+    waits for a permission or has been idle. Each answers at once and never slows Claude Code. `[daemon] lang`
+    (`es` by default) is the notices' language and the fallback. Guide: `docs/guide/claude.md`, with the
+    `settings.json` snippet and dictation by a desktop shortcut over `ecli listen` (press-to-start; hold-to-talk
+    is not built).
+  - The voice conversation (TODO_vehicle step 10): `POST /talk` and `DELETE /talk`, `ecli talk`. Half-duplex with
+    a headless Claude Code: it listens, the agent answers aloud sentence by sentence (fenced code never said), and
+    listens again; «adiós» / «goodbye» alone ends it, and so do `[daemon.talk] idle` (60 s) and `turn` (10 min).
+    The session is always isolated from the user's Claude Code settings and has only the tools named in
+    `[daemon.talk.claude] tools`. Permissions are asked aloud through the MCP tool `approve`, which answers only
+    that conversation's agent: only what is read aloud whole and faithfully can be approved — every symbol named,
+    over 160 characters or several lines refused unasked; silence or an unclear answer is a no. The microphone is
+    the conversation's while it runs. One stop for every door: `/stop` and the MCP `stop` tool cut the voice at
+    once, drop the agent's turn and listen again; a halted turn can queue nothing after. The talk states on
+    `/events`. Guide: `docs/guide/claude.md`.
+  - Evidence: every endpoint proven against scripted TTS and STT servers and fake devices, the MCP tools with a
+    real client; the spoken digest held to its properties over 4000 generated inputs — every character a letter, a
+    digit, a space or speakable punctuation; `ldd evoiced` free of sherpa-onnx and onnxruntime; `make coverage`
+    91.53 % lines. Not proven: no real speaker or microphone has been heard through it, and no Claude Code
+    session has called the tools or fired the hooks.
+- `evoice/device`: the microphone and speaker code of `ecli` as a library; `ecli`'s commands and output are
+  byte-identical. `evoice/core` gains an `engine` feature (on by default) so a crate can use its settings, logging
+  and resampling without linking the model runtime.
 - STT diarization node (TODO_vehicle step 2): `[stt.pipeline.diarize]`, off by default, on sherpa-onnx's offline
   speaker diarization (pyannote segmentation 3.0 + WeSpeaker ResNet34-LM), run over an uploaded file beside its
   transcription, and only when the request asks. Each segment takes the speaker that overlaps it longest, numbered
@@ -24,12 +68,13 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
     segments to the ASR deadline (`Timeout`). Its ASR and SER deadlines and its stall limit are now absent, as its
     overload policy; live audio keeps them all. Evidence: `test_file_transcribe_waits_past_the_asr_deadline` red
     (12 of 12) then green.
-- Diarization choices for the embedding bench (TODO_vehicle step 3): `embedding` (`wespeaker-resnet34-lm` default,
-  `campplus-zh-en`, `eres2net-voxceleb`) and `precision` (`fp32` default, `int8`). No default changes until the
-  bench decides.
-
-### Changed
-
+- Diarization choices (TODO_vehicle step 3): `embedding` (`wespeaker-resnet34-lm` default, `campplus-zh-en`,
+  `eres2net-voxceleb`) and `precision` (`fp32` default, `int8`). Bench on 12 held-out VoxConverse files, each arm
+  at its tuned threshold: DER 0.373 for the default, 0.179 for CAM++, 0.141 for ERes2Net (both better by more than
+  the registered 0.02, paired intervals above 0.10), int8 no different. The default does not change, and no
+  setting is validated for Spanish: on a real 61-min meeting of 9 to 13 speakers the tuned thresholds find 35 to
+  49 and the untuned default 24, one of them holding 52 % of the speech. Report:
+  `docs/history/2026-11-diarization.md`.
 - Home: <https://github.com/edamlabs/e-voice>, documentation <https://edamlabs.github.io/e-voice/>; the old
   `damvolkov/e-voice` URLs redirect.
 - Images move with the owner and drop the dash, from the next release: `ghcr.io/edamlabs/evoice-stt`,
@@ -38,9 +83,16 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 - README: badge layout, landscape logo and description standardized on the EDamLabs template.
 - Dependencies: Renovate replaces Dependabot. Routine updates (images, toolchain, actions, lock files, the benchmark's
   Python tooling, Rust patch releases) merge themselves once every required check passes; Rust minor and major
-  updates wait for a human.
+  updates wait for a human. `tungstenite` in the services and the daemon never moves alone: it is pinned to the
+  one axum resolves.
 
 ### Fixed
+
+- Renovate #28 broke `main`: `tungstenite` moved to 0.30 in stt and tts, away from axum's 0.29, so an oversized
+  WebSocket message closed 1000 instead of 1009; the pin is back. `ort` 2.0.0-rc.15 holds the ONNX Runtime
+  environment weakly: it is now kept for the life of the process and handed to every session (NeuTTS, Pocket,
+  Qwen3, emotion2vec, openWakeWord). Evidence: the 1009 frame tests green again (stt 11, tts 4, the daemon's
+  `/events`); 54 of 54 model-backed tests with real models; the three runtime images build.
 
 - STT batch (TODO_vehicle step 1): a file run never sheds a segment. One 1 s chunk carrying several
   utterances met the live overload policy and answered «N segment(s) failed: dropped under load» on long uploads.
@@ -52,7 +104,7 @@ Same services, same APIs: the project moves to the EDamLabs organisation.
 
 ### Security
 
-- No number a client sends sizes the services' memory (TODO_VOICE-HELM_harden, in progress). Both listen on
+- No number a client sends sizes the services' memory (TODO_VOICE-HELM_harden). Both listen on
   `0.0.0.0` by default.
   - Sample rate: refused above 384 kHz before any allocation. A rate of `4294967295` — in a socket's `rate`, a
     file's header or a voice clip — reserved about 2.3 GB and aborted the process. Sockets close 1003, uploads 400.

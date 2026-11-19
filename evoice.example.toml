@@ -75,7 +75,8 @@ min = "500ms"                                # shorter segments are not classifi
 
 [stt.pipeline.diarize]
 backend = "off"                              # off | sherpa   (speakers of an uploaded file; never live audio)
-embedding = "wespeaker-resnet34-lm"
+embedding = "wespeaker-resnet34-lm"          # wespeaker-resnet34-lm | campplus-zh-en | eres2net-voxceleb
+precision = "fp32"                           # fp32 | int8   (segmentation weights)
 threads = 4                                  # this node's own budget, apart from jobs
 threshold = 0.5                              # clustering distance; ignored when speakers is set
 # speakers = 9                               # fix the speaker count instead of estimating it
@@ -114,3 +115,30 @@ espeak = "espeak-ng"                         # phonemizer binary (neutts)
 data = "data/tts"                            # models/ · voices/ · ops/ (exports, checkpoints, results)
 manifest = "evoice/tts/models.toml"
 verify = "stamp"                             # stamp | full
+
+##### DAEMON #####
+[daemon]                                     # evoiced: the one local process every voice client talks to
+host = "127.0.0.1"                           # loopback: the daemon owns the audio devices; never [server] host
+port = 5700
+tts = "ws://127.0.0.1:5600"                  # TTS service's WebSocket base (ws:// only, TLS not built in)
+stt = "ws://127.0.0.1:5500"                  # STT service's WebSocket base (ws:// only, TLS not built in)
+# output = "…"                               # output device by a part of its name; system default when absent
+# input = "…"                                # input device by a part of its name; system default when absent
+listen = "15s"                               # wait for someone to start speaking; POST /listen may override, at most 300s
+lang = "es"                                  # es | en — what the hooks say when a reply's words don't decide; the notices' language
+                                             # MCP: a client's voice when a call names none, keyed by the
+                                             # X-Evoice-Client header it is registered with (works for every client);
+                                             # its declared name counts only when each request carries it (2026-07-28+)
+[daemon.voices]
+# lens = "narrator"
+
+[daemon.talk]                                # the voice conversation (POST /talk, ecli talk)
+idle = "60s"                                 # it ends when nobody speaks for this long
+turn = "10m"                                 # one agent turn is cut past this
+answer = "15s"                               # a permission question waits this long for a yes or a no
+
+[daemon.talk.claude]                         # the voice conversation's agent: Claude Code, headless
+bin = "claude"
+# cwd = "…"                                  # the session's project; the daemon's directory when absent
+# model = "…"                                # Claude Code's default when absent
+tools = ["Read", "Bash", "Edit", "Write"]    # the only tools that exist in it; all but reading ones are asked aloud

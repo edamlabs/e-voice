@@ -16,6 +16,7 @@ nav = [
     { "Clients" = "guide/clients.md" },
     { "Wake word" = "guide/wake.md" },
     { "Voices" = "guide/voices.md" },
+    { "Claude Code" = "guide/claude.md" },
   ] },
   { "API" = [
     { "Protocols" = "api/index.md" },
@@ -37,6 +38,7 @@ nav = [
     { "2026-10 · backends benchmark" = "history/2026-10-backends/index.md" },
     { "2026-10 · CPU benchmark" = "history/2026-10-benchmark.md" },
     { "2026-10 · TTS" = "history/2026-10-tts.md" },
+    { "2026-11 · diarization bench" = "history/2026-11-diarization.md" },
   ] },
 ]
 

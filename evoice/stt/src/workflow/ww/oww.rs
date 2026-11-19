@@ -70,13 +70,13 @@ impl OwwWw {
     /// # Errors
     /// Missing files or onnxruntime rejecting a graph.
     pub fn new(dir: &Path, config: &WwConfig) -> Result<Self, BackendError> {
-        Runtime::probe().map_err(|_| BackendError::Load("onnxruntime"))?;
+        let environment = Runtime::environment().map_err(|_| BackendError::Load("onnxruntime"))?;
         let load = |name: &str| {
             let path = dir.join(name);
             path.is_file()
                 .then_some(())
                 .ok_or_else(|| BackendError::Missing(path.clone()))?;
-            Session::builder()
+            Session::builder(environment)
                 .map_err(|_| BackendError::Load("openwakeword session"))?
                 .with_intra_threads(usize::from(config.threads))
                 .map_err(|_| BackendError::Load("openwakeword threads"))?

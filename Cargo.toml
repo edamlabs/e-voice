@@ -1,5 +1,5 @@
 [workspace]
-members = ["evoice/core", "evoice/stt", "evoice/tts", "cli"]
+members = ["evoice/core", "evoice/daemon", "evoice/device", "evoice/stt", "evoice/tts", "cli"]
 resolver = "3"
 
 ### What this repository is in EDamLabs' taxonomy (https://github.com/edamlabs/esteward#identity).
