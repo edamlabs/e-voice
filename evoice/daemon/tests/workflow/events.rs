@@ -160,7 +160,7 @@ async fn test_a_successful_listen_announces_open_partials_heard_closed_and_heard
     let listener = std::sync::Arc::clone(&w.state.listen);
     let task = tokio::spawn(async move { listener.listen(None).await });
     assert!(w.mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Partial("ho".to_owned()));
     feed.say(Recognized::Partial("hola".to_owned()));
     feed.say(Recognized::Final(heard("hola"), None));

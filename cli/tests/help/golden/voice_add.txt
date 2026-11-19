@@ -1,0 +1,15 @@
+Read a text aloud; the daemon records it and the speech service learns the voice¶
+¶
+Usage: ecli voice add [OPTIONS] <ID>¶
+¶
+Arguments:¶
+  <ID>  Voice id: 1-64 chars of a-z, 0-9, '-' or '_'¶
+¶
+Options:¶
+      --text <TEXT>        Text to read; the daemon's reading script for the language when omitted¶
+      --lang <LANG>        Language of the reading script and of the sample; the daemon's when omitted [possible values: es, en]¶
+      --silence <SILENCE>  Silence after speech that ends the recording (e.g. 2.5s); the daemon's default when omitted¶
+      --max <MAX>          Longest clip (e.g. 30s, at most 30 s); the daemon's default when omitted¶
+      --replace            Replace a voice with the same id¶
+      --url <URL>          Daemon base URL [env: ECLI_DAEMON_URL=] [default: http://127.0.0.1:5700]¶
+  -h, --help               Print help¶

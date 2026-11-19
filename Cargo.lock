@@ -1049,6 +1049,7 @@ dependencies = [
  "e-voice-core",
  "e-voice-device",
  "futures-util",
+ "hound",
  "humantime-serde",
  "pulldown-cmark",
  "reqwest",

@@ -43,10 +43,19 @@ pub struct DaemonClient {
 }
 
 impl DaemonClient {
+    pub(crate) fn url(&self) -> &str {
+        &self.url
+    }
+
     /// Sends `body` to `path` with `method` and reads the answer as `T`. A refusal carries the daemon's own
     /// `error`, or the raw body when it is not the daemon's shape (axum's own rejections). No request
     /// timeout: a say lasts as long as its speech, and the daemon bounds a listen itself.
-    async fn call<T: DeserializeOwned>(&self, method: Method, path: &str, body: &Value) -> Result<T, DaemonError> {
+    pub(crate) async fn call<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: &Value,
+    ) -> Result<T, DaemonError> {
         let connect = |source| DaemonError::Connect {
             url: self.url.clone(),
             source,

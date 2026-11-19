@@ -2,6 +2,7 @@
     dead_code,
     clippy::cast_precision_loss,
     clippy::needless_pass_by_value,
+    clippy::too_many_arguments,
     clippy::unused_async_trait_impl
 )]
 
@@ -16,11 +17,12 @@ use e_voice_core::schema::emotion::Emotion;
 use e_voice_core::schema::lang::Lang;
 use e_voice_daemon::hearing::base::{Heard, Hearing, HearingError, Recognized, Transcription};
 use e_voice_daemon::schema::event::DaemonEvent;
-use e_voice_daemon::speech::base::{Frame, Speech, SpeechError, SpeechRequest, Utterance};
+use e_voice_daemon::speech::base::{Frame, Learning, Speech, SpeechError, SpeechRequest, Utterance, VoiceClip};
 use e_voice_daemon::workflow::audio::AudioThread;
 use e_voice_daemon::workflow::capture::{CaptureThread, Deliver};
 use e_voice_daemon::workflow::listen::{Listen, ListenError};
 use e_voice_daemon::workflow::queue::SpeechQueue;
+use e_voice_daemon::workflow::record::{Learned, Record, RecordError, Recorder, Take};
 use e_voice_device::capture::base::Capture;
 use e_voice_device::error::DeviceError;
 use e_voice_device::playback::base::Playback;
@@ -660,6 +662,8 @@ pub struct Wired {
     pub voices: FakeVoices,
     pub approvals: e_voice_daemon::talk::approval::Approvals,
     pub script: AgentScript,
+    pub learning: FakeLearning,
+    pub record: Arc<dyn Record>,
 }
 
 pub fn wired(speech: FakeSpeech, device: Device, listen: Duration) -> Wired {
@@ -684,6 +688,16 @@ pub fn wired_with(
     ));
     let approvals = e_voice_daemon::talk::approval::Approvals::default();
     let script = AgentScript::new(approvals.clone());
+    let learning = FakeLearning::default();
+    let record: Arc<dyn Record> = Arc::new(Recorder::new(
+        hearing.clone(),
+        mic.thread(),
+        Arc::clone(&listener),
+        Arc::new(voices.clone()),
+        Arc::new(learning.clone()),
+        listen,
+        events.clone(),
+    ));
     let state = state_with(
         queue,
         listener,
@@ -692,6 +706,7 @@ pub fn wired_with(
         table,
         approvals.clone(),
         script.clone(),
+        Arc::clone(&record),
     );
     Wired {
         state,
@@ -702,6 +717,43 @@ pub fn wired_with(
         voices,
         approvals,
         script,
+        learning,
+        record,
+    }
+}
+
+/// A recorder that is never asked: the state of a test that exercises other doors.
+#[derive(Debug)]
+pub struct NoRecord;
+
+impl Record for NoRecord {
+    fn record(&self, _take: Take) -> BoxFuture<'_, Result<Learned, RecordError>> {
+        Box::pin(async { Err(RecordError::Busy) })
+    }
+
+    fn finish(&self) -> bool {
+        false
+    }
+
+    fn cancel(&self) -> bool {
+        false
+    }
+}
+
+/// The speech service's side of learning a voice: keeps every clip it is given, or refuses them.
+#[derive(Debug, Clone, Default)]
+pub struct FakeLearning {
+    pub clips: Arc<Mutex<Vec<VoiceClip>>>,
+    pub refuse: Arc<Mutex<Option<SpeechError>>>,
+}
+
+impl Learning for FakeLearning {
+    fn learn(&self, clip: VoiceClip) -> BoxFuture<'_, Result<(), SpeechError>> {
+        let refused = self.refuse.lock().unwrap().clone();
+        if refused.is_none() {
+            self.clips.lock().unwrap().push(clip);
+        }
+        Box::pin(async move { refused.map_or(Ok(()), Err) })
     }
 }
 
@@ -744,6 +796,7 @@ pub fn state(
         BTreeMap::new(),
         approvals,
         script,
+        Arc::new(NoRecord),
     )
 }
 
@@ -755,8 +808,9 @@ pub fn state_with(
     table: BTreeMap<String, String>,
     approvals: e_voice_daemon::talk::approval::Approvals,
     script: AgentScript,
+    record: Arc<dyn Record>,
 ) -> e_voice_daemon::api::state::AppState {
-    let talk = default_talk(&speech, &listen, &events, &approvals, &script);
+    let talk = default_talk(&speech, &listen, &record, &events, &approvals, &script);
     let table = e_voice_daemon::speech::table::VoiceTable::new(table);
     let mcp = e_voice_daemon::mcp::server::McpServer::new(
         speech.clone(),
@@ -775,6 +829,7 @@ pub fn state_with(
         table,
         lang: Lang::Es,
         talk,
+        record,
     }
 }
 
@@ -1008,6 +1063,7 @@ impl Turn for FakeTurn {
 fn default_talk(
     speech: &SpeechQueue,
     listen: &Arc<dyn Listen>,
+    record: &Arc<dyn Record>,
     events: &broadcast::Sender<DaemonEvent>,
     approvals: &Approvals,
     script: &AgentScript,
@@ -1022,6 +1078,7 @@ fn default_talk(
         move |token| script.make(token),
         Arc::clone(listen),
         speech.clone(),
+        Arc::clone(record),
         approvals.clone(),
         events.clone(),
         setup,
@@ -1046,6 +1103,7 @@ pub fn talk(w: &Wired, lang: Lang, idle: Duration, turn: Duration, answer: Durat
         move |token| script.make(token),
         Arc::clone(&w.state.listen),
         w.state.speech.clone(),
+        Arc::clone(&w.record),
         w.approvals.clone(),
         w.events.clone(),
         setup,

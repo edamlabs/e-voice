@@ -13,6 +13,21 @@ e-voice-tts voice rm damien
 e-voice-tts say "Hola, soy Demian." --voice damien --out hola.wav
 ```
 
+Or record it on the spot, through the daemon (`evoiced`), which owns the microphone:
+
+```bash
+ecli voice add damien2                 # shows a ~25 s text to read; Enter starts, Enter finishes early
+ecli voice add damien2 --lang en       # the English text
+ecli voice add damien2 --text "…"      # read your own text; it is stored as the transcript
+ecli voice add damien --replace        # an existing voice is refused unless replaced
+```
+
+It records from the moment you start speaking until 2.5 s of silence (`--silence`), 30 s (`--max`, the most the
+TTS keeps) or Enter, trims the silence at both ends by the STT's own speech bounds, sends the clip with its text to
+the TTS and then says a sample sentence in the new voice. The stored text is yours, else the script shown, else
+what the STT heard. `ecli stop` cancels it and nothing is learned; while a conversation (`ecli talk`) holds the
+microphone it answers busy. Daemon routes: `GET /voices/script?lang=`, `POST /voices`, `POST /voices/finish`.
+
 The same through the API: `POST /v1/voices` (see [Text to speech](../api/tts.md#voices-v1voices)).
 Set `tts.voice` to make one the default; the server primes it at startup so the first request pays
 no encoding.

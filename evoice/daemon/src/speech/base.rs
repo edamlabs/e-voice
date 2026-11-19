@@ -52,3 +52,18 @@ pub trait Utterance: Send + 'static {
 pub trait Voices: Debug + Send + Sync {
     fn list(&self) -> BoxFuture<'_, Result<Vec<String>, SpeechError>>;
 }
+
+/// A voice to learn: its id, mono samples at `rate` of one speaker, and what they say when it is known.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceClip {
+    pub id: String,
+    pub rate: NonZeroU32,
+    pub samples: Vec<f32>,
+    pub text: Option<String>,
+}
+
+/// The capability of learning a voice from a clip, usable as `voice` once learned; a voice with the same
+/// id is replaced. Object-safe, like [`Voices`].
+pub trait Learning: Debug + Send + Sync {
+    fn learn(&self, clip: VoiceClip) -> BoxFuture<'_, Result<(), SpeechError>>;
+}

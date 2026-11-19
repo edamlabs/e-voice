@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::num::NonZeroU32;
+use std::time::Duration;
 
 use e_voice_core::schema::emotion::Emotion;
 use e_voice_core::schema::error::NodeError;
@@ -14,11 +15,13 @@ pub struct Heard {
     pub emotion: Emotion,
 }
 
-/// What the recognizer says while it listens: someone started speaking, the growing text of a segment,
-/// then its final, with the error that kept the recognizer from finishing it, if one did.
+/// What the recognizer says while it listens: someone started or stopped speaking, each at its offset in
+/// the audio sent so far, the growing text of a segment, then its final, with the error that kept the
+/// recognizer from finishing it, if one did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Recognized {
-    Started,
+    Started(Duration),
+    Stopped(Duration),
     Partial(String),
     Final(Heard, Option<NodeError>),
 }

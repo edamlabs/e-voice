@@ -130,7 +130,7 @@ async fn test_a_subscriber_gets_the_speech_and_listen_sequences_as_the_pinned_js
     let asking = Arc::clone(&daemon);
     let call = tokio::spawn(async move { asking.listen(None, None).await });
     assert!(w.mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Partial("ho".to_owned()));
     feed.say(Recognized::Final(heard("hola"), None));
     let (status, _) = call.await.unwrap();

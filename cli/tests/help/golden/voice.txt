@@ -1,0 +1,10 @@
+Learn a voice: read a text aloud, the daemon records it and the speech service learns it¶
+¶
+Usage: ecli voice <COMMAND>¶
+¶
+Commands:¶
+  add   Read a text aloud; the daemon records it and the speech service learns the voice¶
+  help  Print this message or the help of the given subcommand(s)¶
+¶
+Options:¶
+  -h, --help  Print help¶

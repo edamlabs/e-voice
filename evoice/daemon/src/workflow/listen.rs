@@ -154,7 +154,7 @@ impl<H: Hearing> Listener<H> {
                     None => return Err(ListenError::Device(DeviceError::Input(None))),
                 },
                 recognized = transcription.next() => match recognized {
-                    Some(Ok(Recognized::Started)) => {
+                    Some(Ok(Recognized::Started(_))) => {
                         let until = Instant::now().checked_add(SPOKEN).ok_or(ListenError::Invalid(SPOKEN))?;
                         phase = Phase::Speaking(until);
                     }
@@ -168,6 +168,7 @@ impl<H: Hearing> Listener<H> {
                     Some(Ok(Recognized::Partial(text))) => {
                         events.send(DaemonEvent::Partial { text }).ok();
                     }
+                    Some(Ok(Recognized::Stopped(_))) => {}
                     Some(Err(error)) => return Err(ListenError::Hearing(error)),
                     None => {
                         let closed = HearingError::Server("closed the session before a final".to_owned());

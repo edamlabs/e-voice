@@ -65,7 +65,7 @@ fn test_stt_tts_and_devices_helps_are_byte_identical_to_main() {
 }
 
 #[test]
-fn test_the_top_level_help_is_main_s_with_exactly_four_lines_appended_after_devices() {
+fn test_the_top_level_help_is_main_s_with_exactly_five_lines_appended_after_devices() {
     let main = unmarked(include_str!("golden/top.txt"));
     let (before, after) = main.split_once("  devices").unwrap();
     let (devices, rest) = after.split_once('\n').unwrap();
@@ -74,11 +74,12 @@ fn test_the_top_level_help_is_main_s_with_exactly_four_lines_appended_after_devi
         "  stop     Silence the daemon's voice and drop every text waiting",
         "  listen   Listen once through the daemon and print what was heard",
         "  talk     Start or stop a voice conversation with the agent through the daemon",
+        "  voice    Learn a voice: read a text aloud, the daemon records it and the speech service learns it",
     ];
     let expected = format!("{before}  devices{devices}\n{}\n{rest}", lines.join("\n"));
     let seen = stdout(&["--help"]);
     assert_eq!(seen, expected);
-    assert_eq!(seen.lines().count(), main.lines().count() + 4);
+    assert_eq!(seen.lines().count(), main.lines().count() + 5);
     assert_eq!(stdout(&["help"]), expected);
 }
 
@@ -89,6 +90,16 @@ fn test_the_help_of_the_three_daemon_verbs_is_pinned() {
     assert_eq!(
         stdout(&["listen", "--help"]),
         unmarked(include_str!("golden/listen.txt"))
+    );
+}
+
+#[test]
+fn test_the_help_of_voice_and_voice_add_is_pinned() {
+    assert_eq!(stdout(&["voice", "--help"]), unmarked(include_str!("golden/voice.txt")));
+    assert_eq!(stdout(&["help", "voice"]), unmarked(include_str!("golden/voice.txt")));
+    assert_eq!(
+        stdout(&["voice", "add", "--help"]),
+        unmarked(include_str!("golden/voice_add.txt"))
     );
 }
 

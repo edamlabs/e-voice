@@ -125,7 +125,7 @@ async fn test_listen_succeeds_with_text_lang_and_emotion() {
     let asking = mcp.clone();
     let call = tokio::spawn(async move { asking.call("listen", &json!({"timeout_seconds": 10})).await });
     assert!(w.mic.live().await);
-    feed.say(Recognized::Started);
+    feed.say(Recognized::Started(std::time::Duration::ZERO));
     feed.say(Recognized::Final(heard("hola"), None));
     let result = call.await.unwrap();
     daemon.stop().await;

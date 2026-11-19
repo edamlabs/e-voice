@@ -60,7 +60,9 @@ async fn test_post_talk_while_a_listen_holds_the_microphone_is_a_409() {
     let (status, answer) = daemon.send("POST", "/talk").await;
     assert_eq!(status, 409);
     assert_eq!(body(&answer), json!({"error": "the microphone is held by a listen"}));
-    feed.say(e_voice_daemon::hearing::base::Recognized::Started);
+    feed.say(e_voice_daemon::hearing::base::Recognized::Started(
+        std::time::Duration::ZERO,
+    ));
     feed.say(e_voice_daemon::hearing::base::Recognized::Final(
         crate::fake::heard("hola"),
         None,

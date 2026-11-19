@@ -10,7 +10,8 @@ use crate::api::state::AppState;
 /// other client's queued texts alike: 200 `{"stopped": id | null, "dropped": n}`, the same shape while
 /// idle. A voice conversation that is thinking, speaking or asking also drops the agent's turn and listens
 /// again; one that is listening goes on listening. 500 `{"error"}` when the speech queue is gone. The
-/// sequence is [`Talk::stop`]'s, shared with the MCP `stop` tool.
+/// sequence is [`Talk::stop`]'s, shared with the MCP `stop` tool; a voice recording running is cancelled
+/// by it, and learns nothing.
 pub async fn stop(State(state): State<AppState>) -> Response {
     match state.talk.stop().await {
         Ok(halted) => (StatusCode::OK, Json(halted)).into_response(),
