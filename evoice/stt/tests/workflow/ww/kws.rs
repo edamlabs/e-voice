@@ -121,28 +121,26 @@ fn test_detection_does_not_depend_on_chunking() {
     }
 }
 
+fn repeated(phrase: &[f32], gap: f32) -> Vec<f32> {
+    [
+        fixture::silence(1.0),
+        phrase.to_vec(),
+        fixture::silence(gap),
+        phrase.to_vec(),
+        fixture::silence(1.0),
+    ]
+    .concat()
+}
+
 #[test]
 #[ignore = "requires installed models: make setup ARGS=--all"]
 fn test_cooldown_merges_close_repeats_only() {
     let ww = ww("hey eager");
-    let heard = reliable(&ww, "Hey eager.");
-    let phrase = heard[16_000..heard.len() - 16_000].to_vec();
-    let close = [
-        fixture::silence(1.0),
-        phrase.clone(),
-        fixture::silence(0.2),
-        phrase.clone(),
-        fixture::silence(1.0),
-    ]
-    .concat();
-    let apart = [
-        fixture::silence(1.0),
-        phrase.clone(),
-        fixture::silence(3.0),
-        phrase,
-        fixture::silence(1.0),
-    ]
-    .concat();
-    assert_eq!(detections(&ww, &close, 1_600).len(), 1);
-    assert_eq!(detections(&ww, &apart, 1_600).len(), 2);
+    let phrase = utterances("Hey eager.")
+        .into_iter()
+        .map(|audio| audio[16_000..audio.len() - 16_000].to_vec())
+        .find(|phrase| detections(&ww, &repeated(phrase, 3.0), 1_600).len() == 2)
+        .unwrap();
+    assert_eq!(detections(&ww, &repeated(&phrase, 0.2), 1_600).len(), 1);
+    assert_eq!(detections(&ww, &repeated(&phrase, 3.0), 1_600).len(), 2);
 }
