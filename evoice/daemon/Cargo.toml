@@ -18,7 +18,7 @@ path = "src/main.rs"
 e-voice-core = { path = "../core", default-features = false }
 e-voice-device = { path = "../device" }
 axum = { version = "0.8.9", features = ["ws"] }
-clap = { version = "4.6.8", features = ["derive"] }
+clap = { version = "4.6.9", features = ["derive"] }
 futures-util = "0.3.34"
 hound = "3.5.1"
 humantime-serde = "1.1.1"
@@ -36,7 +36,7 @@ tracing = "0.1.44"
 ### a hang-up. It must stay the version axum resolves to (Renovate bumps them apart); if they drift the
 ### downcast misses and the over-cap /events test goes red. The client sockets use tokio-tungstenite above.
 tungstenite = "0.29.0"
-url = "2.5.8"
+url = "2.5.9"
 uuid = { version = "1.29.3", features = ["v4"] }
 
 [dev-dependencies]

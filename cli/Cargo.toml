@@ -11,7 +11,7 @@ build = "../evoice/core/link.rs"
 workspace = true
 
 [dependencies]
-clap = { version = "4.6.8", features = ["derive", "env"] }
+clap = { version = "4.6.9", features = ["derive", "env"] }
 e-voice-device = { path = "../evoice/device" }
 futures-util = "0.3.34"
 hound = "3.5.1"
