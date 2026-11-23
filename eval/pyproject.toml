@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=9.2.0", "ruff>=0.17.5", "ty>=0.0.104"]
+dev = ["pytest>=9.2.0", "ruff>=0.17.6", "ty>=0.0.108"]
 
 [build-system]
 requires = ["hatchling>=1.33.0"]
